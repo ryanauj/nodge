@@ -1,0 +1,28 @@
+# Thin server-side backstop. The primary gate is the local pre-push hook
+# (.husky/pre-push), which runs typecheck + lint + test + build before any
+# push. This job only re-runs those checks on main to catch anything that
+# slipped past the hook (e.g. a `--no-verify` push, or a commit pushed without
+# hooks installed).
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

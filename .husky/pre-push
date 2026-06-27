@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# Aggressive pre-push gate: this is the primary CI for this repo.
+# Runs the same checks GitHub would, before anything leaves your machine.
+# If any step fails, the push is aborted. Bypass only in emergencies with
+# `git push --no-verify`.
+
+echo "▶ pre-push: pnpm typecheck"
+pnpm typecheck || {
+  echo "✖ typecheck failed — push aborted. Fix errors or use --no-verify to override." >&2
+  exit 1
+}
+
+echo "▶ pre-push: pnpm lint"
+pnpm lint || {
+  echo "✖ lint failed — push aborted. Fix errors or use --no-verify to override." >&2
+  exit 1
+}
+
+echo "▶ pre-push: pnpm test"
+pnpm test || {
+  echo "✖ tests failed — push aborted. Fix errors or use --no-verify to override." >&2
+  exit 1
+}
+
+echo "▶ pre-push: pnpm build"
+pnpm build || {
+  echo "✖ build failed — push aborted. Fix errors or use --no-verify to override." >&2
+  exit 1
+}
+
+echo "✔ pre-push checks passed"
