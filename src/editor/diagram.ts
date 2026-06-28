@@ -32,6 +32,8 @@ export interface DiagramSource {
 export interface FlowNodeData {
   label: string
   style: ResolvedNodeStyle
+  /** The base entity this placement draws (spec §5.2) — powers selection → properties. */
+  entityId: Uuid
   [key: string]: unknown
 }
 
@@ -65,7 +67,7 @@ export function toFlowNodes(src: DiagramSource): FlowNode[] {
       id: node.id,
       type: 'nodge',
       position: { x: pos.x, y: pos.y },
-      data: { label: node.label || entity?.name || 'Node', style },
+      data: { label: node.label || entity?.name || 'Node', style, entityId: node.entityId },
     }
   })
 }

@@ -8,6 +8,7 @@
  */
 
 import type { DataGateway, Uuid } from '../gateway'
+import { BUILTIN_PROTOTYPES } from './prototypes'
 import { DEFAULT_PALETTE_NAME, DEFAULT_PALETTE_TOKENS } from './style'
 
 /** The handles the canvas needs to read and write the active diagram. */
@@ -42,6 +43,8 @@ export async function createDefaultDiagram(gw: DataGateway): Promise<DiagramIds>
     tokens: DEFAULT_PALETTE_TOKENS,
     builtin: true,
   })
+  // Seed the built-in prototype library so the tool is useful on first run (§9.1).
+  for (const proto of BUILTIN_PROTOTYPES) await gw.createPrototype(graph.id, proto)
   const board = await gw.createBoard(graph.id, { name: 'Board 1' })
   const view = await gw.createView(board.id, { name: 'View 1', paletteId: palette.id })
   return { graphId: graph.id, boardId: board.id, viewId: view.id, paletteId: palette.id }

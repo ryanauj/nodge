@@ -48,6 +48,29 @@ test('loads, adds two nodes and connects them with no console errors', async ({ 
   expect(errors).toEqual([])
 })
 
+test('Phase 2: prototype library stamps a node and selection opens properties', async ({
+  page,
+}) => {
+  const errors = trackErrors(page)
+  await page.goto('/')
+
+  // The prototype library panel renders with the seeded built-ins.
+  const protoPanel = page.getByRole('region', { name: 'Prototype library' })
+  await expect(protoPanel).toBeVisible()
+  await expect(protoPanel.getByText('Service')).toBeVisible()
+
+  // Stamp a node from the Service prototype → a placement appears on the canvas.
+  await protoPanel.getByRole('button', { name: 'Create from Service' }).click()
+  await expect(page.locator('.react-flow__node')).toHaveCount(1)
+
+  // Selecting the node opens the entity properties / cross-reference panel.
+  await page.locator('.react-flow__node').first().click()
+  await expect(page.getByRole('region', { name: 'Entity properties' })).toBeVisible()
+  await expect(page.getByText(/Used in \/ Connections/)).toBeVisible()
+
+  expect(errors).toEqual([])
+})
+
 test('restores the diagram from OPFS + the pointer after a reload', async ({ page }) => {
   await page.goto('/')
   const addNode = page.getByRole('button', { name: 'Add node' }).first()

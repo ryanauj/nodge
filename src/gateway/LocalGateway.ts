@@ -47,10 +47,20 @@ import type {
   BoardInput,
   ConnectNodesInput,
   ConnectNodesResult,
+  ConnectToEntityResult,
+  ConnectToExistingEntityInput,
+  ConnectToNewEntityInput,
+  CreatePrototypeFromEdgeInput,
+  CreatePrototypeFromNodeInput,
   DataGateway,
   EdgeInput,
   EntityInput,
   EntityPatch,
+  EntityBacklink,
+  EntityEdgePlacement,
+  EntityPlacement,
+  EntityRelationship,
+  EntityUsage,
   GraphDetail,
   GraphInput,
   GraphPatch,
@@ -58,7 +68,12 @@ import type {
   NodePatch,
   NodePositionInput,
   PaletteInput,
+  PasteClipboardInput,
+  PasteClipboardResult,
   PrototypeInput,
+  PrototypePatch,
+  RefreshFromPrototypeInput,
+  RefreshFromPrototypeResult,
   RelationshipInput,
   RelationshipPatch,
   StyleProfileInput,
@@ -321,14 +336,16 @@ export class LocalGateway implements DataGateway {
   // ── Composite canvas gestures ────────────────────────────────────────────
   async addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
     const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    // Seed style + metadata from the linked prototype on creation (spec §9.2).
+    const seed = await this.seedFromPrototype(input.prototypeId, input.entityStyleOverride)
     const entity: Entity = {
       ...this.stampNew(),
       graphId: board.graphId,
       name: input.name,
       prototypeId: input.prototypeId ?? null,
-      styleOverride: input.entityStyleOverride ?? {},
+      styleOverride: seed.styleOverride,
       links: [],
-      metadata: {},
+      metadata: seed.metadata,
     }
     const node: Node = {
       ...this.stampNew(),
@@ -391,6 +408,265 @@ export class LocalGateway implements DataGateway {
     )
   }
 
+  /**
+   * Seed an entity's style + metadata from a prototype on creation (spec §9.2:
+   * "On creation, the prototype seeds the entity's style + metadata"). The link
+   * persists via `prototypeId`; later prototype edits never auto-propagate.
+   */
+  private async seedFromPrototype(
+    prototypeId: Uuid | null | undefined,
+    entityStyleOverride: Record<string, unknown> | undefined,
+  ): Promise<{ styleOverride: Record<string, unknown>; metadata: Record<string, unknown> }> {
+    if (!prototypeId) return { styleOverride: entityStyleOverride ?? {}, metadata: {} }
+    const proto = await this.repo.getById(prototypeTable, prototypeId)
+    if (!proto) return { styleOverride: entityStyleOverride ?? {}, metadata: {} }
+    return {
+      styleOverride: { ...proto.style, ...(entityStyleOverride ?? {}) },
+      metadata: { ...proto.metadata },
+    }
+  }
+
+  async connectToExistingEntity(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: ConnectToExistingEntityInput,
+  ): Promise<ConnectToEntityResult> {
+    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const source = await this.require(
+      await this.repo.getById(nodeTable, input.sourceNodeId),
+      'node',
+      input.sourceNodeId,
+    )
+    const entity = await this.require(
+      await this.repo.getById(entityTable, input.entityId),
+      'entity',
+      input.entityId,
+    )
+    const node: Node = {
+      ...this.stampNew(),
+      boardId,
+      entityId: entity.id,
+      label: '',
+      styleOverride: {},
+    }
+    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const relationship: Relationship = {
+      ...this.stampNew(),
+      graphId: board.graphId,
+      sourceEntityId: source.entityId,
+      targetEntityId: entity.id,
+      prototypeId: input.relationshipPrototypeId ?? null,
+      directed: input.directed ?? true,
+      label: input.label ?? '',
+      styleOverride: {},
+      metadata: {},
+    }
+    const edge: Edge = {
+      ...this.stampNew(),
+      boardId,
+      relationshipId: relationship.id,
+      sourceNodeId: input.sourceNodeId,
+      targetNodeId: node.id,
+      sourceHandle: input.sourceHandle ?? null,
+      targetHandle: input.targetHandle ?? null,
+      label: input.label ?? '',
+      styleOverride: {},
+    }
+    return this.commands.execute(
+      command('connectToExistingEntity', async (m) => {
+        await m.insert(nodeTable, node)
+        await m.put(nodePositionTable, position)
+        await m.insert(relationshipTable, relationship)
+        await m.insert(edgeTable, edge)
+        return { entity, node, position: { nodeId: node.id, x: input.x, y: input.y }, relationship, edge }
+      }),
+    )
+  }
+
+  async connectToNewEntity(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: ConnectToNewEntityInput,
+  ): Promise<ConnectToEntityResult> {
+    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const source = await this.require(
+      await this.repo.getById(nodeTable, input.sourceNodeId),
+      'node',
+      input.sourceNodeId,
+    )
+    const seed = await this.seedFromPrototype(input.prototypeId, undefined)
+    const entity: Entity = {
+      ...this.stampNew(),
+      graphId: board.graphId,
+      name: input.name,
+      prototypeId: input.prototypeId ?? null,
+      styleOverride: seed.styleOverride,
+      links: [],
+      metadata: seed.metadata,
+    }
+    const node: Node = {
+      ...this.stampNew(),
+      boardId,
+      entityId: entity.id,
+      label: input.name,
+      styleOverride: {},
+    }
+    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const relationship: Relationship = {
+      ...this.stampNew(),
+      graphId: board.graphId,
+      sourceEntityId: source.entityId,
+      targetEntityId: entity.id,
+      prototypeId: input.relationshipPrototypeId ?? null,
+      directed: input.directed ?? true,
+      label: input.label ?? '',
+      styleOverride: {},
+      metadata: {},
+    }
+    const edge: Edge = {
+      ...this.stampNew(),
+      boardId,
+      relationshipId: relationship.id,
+      sourceNodeId: input.sourceNodeId,
+      targetNodeId: node.id,
+      sourceHandle: input.sourceHandle ?? null,
+      targetHandle: input.targetHandle ?? null,
+      label: input.label ?? '',
+      styleOverride: {},
+    }
+    return this.commands.execute(
+      command('connectToNewEntity', async (m) => {
+        await m.insert(entityTable, entity)
+        await m.insert(nodeTable, node)
+        await m.put(nodePositionTable, position)
+        await m.insert(relationshipTable, relationship)
+        await m.insert(edgeTable, edge)
+        return { entity, node, position: { nodeId: node.id, x: input.x, y: input.y }, relationship, edge }
+      }),
+    )
+  }
+
+  async pasteClipboard(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: PasteClipboardInput,
+  ): Promise<PasteClipboardResult> {
+    await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const { clipboard } = input
+    // Map each clipboard node's refId → the freshly created placement.
+    const nodes: Node[] = []
+    const positions: NodePositionInput[] = []
+    const refToNodeId = new Map<Uuid, Uuid>()
+    const nodePositions: { viewId: Uuid; nodeId: Uuid; x: number; y: number }[] = []
+    for (const cn of clipboard.nodes) {
+      const node: Node = {
+        ...this.stampNew(),
+        boardId,
+        entityId: cn.entityId, // SAME entity — never forks identity (§9.3)
+        label: cn.label,
+        styleOverride: { ...cn.styleOverride },
+      }
+      refToNodeId.set(cn.refId, node.id)
+      nodes.push(node)
+      const x = input.x + cn.dx
+      const y = input.y + cn.dy
+      positions.push({ nodeId: node.id, x, y })
+      nodePositions.push({ viewId, nodeId: node.id, x, y })
+    }
+    const edges: Edge[] = []
+    for (const ce of clipboard.edges) {
+      const sourceNodeId = refToNodeId.get(ce.sourceRefId)
+      const targetNodeId = refToNodeId.get(ce.targetRefId)
+      if (!sourceNodeId || !targetNodeId) continue // edge not fully internal to the selection
+      edges.push({
+        ...this.stampNew(),
+        boardId,
+        relationshipId: ce.relationshipId, // SAME relationship
+        sourceNodeId,
+        targetNodeId,
+        sourceHandle: ce.sourceHandle ?? null,
+        targetHandle: ce.targetHandle ?? null,
+        label: ce.label,
+        styleOverride: { ...ce.styleOverride },
+      })
+    }
+    return this.commands.execute(
+      command('pasteClipboard', async (m) => {
+        for (const node of nodes) await m.insert(nodeTable, node)
+        for (const p of nodePositions) await m.put(nodePositionTable, p)
+        for (const edge of edges) await m.insert(edgeTable, edge)
+        return { nodes, edges, positions }
+      }),
+    )
+  }
+
+  // ── Cross-reference index (§7.4) ──────────────────────────────────────────
+  async getEntityUsages(entityId: Uuid): Promise<EntityUsage> {
+    const entity = await this.require(
+      await this.repo.getById(entityTable, entityId),
+      'entity',
+      entityId,
+    )
+    const nodes = (await this.repo.list(nodeTable)).filter((n) => n.entityId === entityId)
+    const boardCache = new Map<Uuid, Board | undefined>()
+    const boardOf = async (id: Uuid): Promise<Board | undefined> => {
+      if (!boardCache.has(id)) boardCache.set(id, await this.repo.getById(boardTable, id))
+      return boardCache.get(id)
+    }
+    const placements: EntityPlacement[] = []
+    for (const n of nodes) {
+      const board = await boardOf(n.boardId)
+      placements.push({
+        nodeId: n.id,
+        boardId: n.boardId,
+        boardName: board?.name ?? '',
+        label: n.label || entity.name,
+      })
+    }
+    const nodeIds = new Set(nodes.map((n) => n.id))
+    const edges = (await this.repo.list(edgeTable)).filter(
+      (e) => nodeIds.has(e.sourceNodeId) || nodeIds.has(e.targetNodeId),
+    )
+    const edgePlacements: EntityEdgePlacement[] = edges.map((e) => ({
+      edgeId: e.id,
+      boardId: e.boardId,
+      relationshipId: e.relationshipId,
+    }))
+    const relationships = (await this.repo.list(relationshipTable, { graphId: entity.graphId })).filter(
+      (r) => r.sourceEntityId === entityId || r.targetEntityId === entityId,
+    )
+    const relationshipUsages: EntityRelationship[] = relationships.map((r) => ({
+      relationshipId: r.id,
+      role: r.sourceEntityId === entityId ? 'source' : 'target',
+      otherEntityId: r.sourceEntityId === entityId ? r.targetEntityId : r.sourceEntityId,
+      label: r.label,
+      directed: r.directed,
+    }))
+    // Backlinks: other entities whose links point at this one (kind entity|diagram).
+    const allEntities = await this.repo.list(entityTable, { graphId: entity.graphId })
+    const backlinks: EntityBacklink[] = []
+    for (const other of allEntities) {
+      if (other.id === entityId) continue
+      for (const link of other.links) {
+        if ((link.kind === 'entity' || link.kind === 'diagram') && link.target === entityId) {
+          backlinks.push({
+            fromEntityId: other.id,
+            linkId: link.id,
+            kind: link.kind,
+            label: link.label,
+          })
+        }
+      }
+    }
+    return {
+      entityId,
+      placements,
+      edgePlacements,
+      relationships: relationshipUsages,
+      backlinks,
+    }
+  }
+
   // ── Prototypes / Palettes / StyleProfiles ────────────────────────────────
   async listPrototypes(graphId: Uuid): Promise<Prototype[]> {
     return this.repo.list(prototypeTable, { graphId })
@@ -411,6 +687,152 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(
       command('createPrototype', (m) => m.insert(prototypeTable, prototype)),
     )
+  }
+
+  async updatePrototype(id: Uuid, patch: PrototypePatch): Promise<Prototype> {
+    const current = await this.require(
+      await this.repo.getById(prototypeTable, id),
+      'prototype',
+      id,
+    )
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(command('updatePrototype', (m) => m.put(prototypeTable, updated)))
+  }
+
+  async createPrototypeFromNode(input: CreatePrototypeFromNodeInput): Promise<Prototype> {
+    const node = await this.require(await this.repo.getById(nodeTable, input.nodeId), 'node', input.nodeId)
+    const entity = await this.require(
+      await this.repo.getById(entityTable, node.entityId),
+      'entity',
+      node.entityId,
+    )
+    const proto = entity.prototypeId
+      ? await this.repo.getById(prototypeTable, entity.prototypeId)
+      : undefined
+    // Snapshot the resolved style: the prototype's seed merged with entity + node overrides.
+    const style: Record<string, unknown> = {
+      ...(proto?.style ?? {}),
+      ...entity.styleOverride,
+      ...node.styleOverride,
+    }
+    const shape =
+      input.shape !== undefined
+        ? input.shape
+        : (typeof style.shape === 'string' ? style.shape : proto?.shape ?? null)
+    const prototype: Prototype = {
+      ...this.stampNew(),
+      graphId: entity.graphId,
+      kind: 'node',
+      name: input.name,
+      shape,
+      defaultLabel: node.label || entity.name,
+      style,
+      metadata: { ...(proto?.metadata ?? {}), ...entity.metadata },
+      linkScaffold: entity.links.map((l) => ({ ...l })),
+    }
+    return this.commands.execute(
+      command('createPrototypeFromNode', (m) => m.insert(prototypeTable, prototype)),
+    )
+  }
+
+  async createPrototypeFromEdge(input: CreatePrototypeFromEdgeInput): Promise<Prototype> {
+    const edge = await this.require(await this.repo.getById(edgeTable, input.edgeId), 'edge', input.edgeId)
+    const rel = await this.require(
+      await this.repo.getById(relationshipTable, edge.relationshipId),
+      'relationship',
+      edge.relationshipId,
+    )
+    const proto = rel.prototypeId
+      ? await this.repo.getById(prototypeTable, rel.prototypeId)
+      : undefined
+    const style: Record<string, unknown> = {
+      ...(proto?.style ?? {}),
+      ...rel.styleOverride,
+      ...edge.styleOverride,
+    }
+    const prototype: Prototype = {
+      ...this.stampNew(),
+      graphId: rel.graphId,
+      kind: 'relationship',
+      name: input.name,
+      shape: null,
+      defaultLabel: edge.label || rel.label,
+      style,
+      metadata: { ...(proto?.metadata ?? {}), ...rel.metadata },
+      linkScaffold: [],
+    }
+    return this.commands.execute(
+      command('createPrototypeFromEdge', (m) => m.insert(prototypeTable, prototype)),
+    )
+  }
+
+  async duplicatePrototype(prototypeId: Uuid, name?: string): Promise<Prototype> {
+    const source = await this.require(
+      await this.repo.getById(prototypeTable, prototypeId),
+      'prototype',
+      prototypeId,
+    )
+    const prototype: Prototype = {
+      ...this.stampNew(),
+      graphId: source.graphId,
+      kind: source.kind,
+      name: name ?? `${source.name} copy`,
+      shape: source.shape,
+      defaultLabel: source.defaultLabel,
+      style: { ...source.style },
+      metadata: { ...source.metadata },
+      linkScaffold: source.linkScaffold.map((l) => ({ ...l })),
+    }
+    return this.commands.execute(
+      command('duplicatePrototype', (m) => m.insert(prototypeTable, prototype)),
+    )
+  }
+
+  async refreshFromPrototype(
+    input: RefreshFromPrototypeInput,
+  ): Promise<RefreshFromPrototypeResult> {
+    const proto = await this.require(
+      await this.repo.getById(prototypeTable, input.prototypeId),
+      'prototype',
+      input.prototypeId,
+    )
+    if (proto.kind === 'node') {
+      const all = await this.repo.list(entityTable, { graphId: proto.graphId })
+      const linked = all.filter((e) => e.prototypeId === proto.id)
+      const targets = input.all
+        ? linked
+        : linked.filter((e) => (input.ids ?? []).includes(e.id))
+      const updated = targets.map((e) =>
+        this.bumpVersion({
+          ...e,
+          styleOverride: { ...proto.style },
+          metadata: { ...proto.metadata },
+        }),
+      )
+      await this.commands.execute(
+        command('refreshFromPrototype', async (m) => {
+          for (const e of updated) await m.put(entityTable, e)
+        }),
+      )
+      return { refreshed: updated.map((e) => e.id) }
+    }
+    // relationship prototype
+    const all = await this.repo.list(relationshipTable, { graphId: proto.graphId })
+    const linked = all.filter((r) => r.prototypeId === proto.id)
+    const targets = input.all ? linked : linked.filter((r) => (input.ids ?? []).includes(r.id))
+    const updated = targets.map((r) =>
+      this.bumpVersion({
+        ...r,
+        styleOverride: { ...proto.style },
+        metadata: { ...proto.metadata },
+      }),
+    )
+    await this.commands.execute(
+      command('refreshFromPrototype', async (m) => {
+        for (const r of updated) await m.put(relationshipTable, r)
+      }),
+    )
+    return { refreshed: updated.map((r) => r.id) }
   }
 
   async listPalettes(graphId: Uuid): Promise<Palette[]> {
