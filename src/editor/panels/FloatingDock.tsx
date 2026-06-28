@@ -350,6 +350,7 @@ export function FloatingDock(props: FloatingDockProps) {
     (d) => d.id !== 'modes' && placements[d.id] === 'slim',
   )
   const isBottomHalf = typeof window !== 'undefined' && pos.y > window.innerHeight / 2
+  const isRightHalf = typeof window !== 'undefined' && pos.x > window.innerWidth / 2
   const containerStyle: CSSProperties = { left: pos.x, top: pos.y }
 
   return (
@@ -402,6 +403,7 @@ export function FloatingDock(props: FloatingDockProps) {
           customizeOpen={customizeOpen}
           setCustomizeOpen={setCustomizeOpen}
           direction={isBottomHalf ? 'up' : 'down'}
+          align={isRightHalf ? 'right' : 'left'}
         />
       )}
     </div>
@@ -416,15 +418,21 @@ function DockPanel({
   customizeOpen,
   setCustomizeOpen,
   direction,
+  align,
 }: {
   placements: Record<string, Placement>
   renderExpanded: (def: DockControlDef) => ReactElement
   customizeOpen: boolean
   setCustomizeOpen: (next: boolean) => void
   direction: 'up' | 'down'
+  align: 'left' | 'right'
 }) {
   return (
-    <div className={`dock-panel dock-panel--${direction}`} role="group" aria-label="More controls">
+    <div
+      className={`dock-panel dock-panel--${direction} dock-panel--align-${align}`}
+      role="group"
+      aria-label="More controls"
+    >
       {DOCK_CATEGORIES.map((cat) => {
         const items = DOCK_CONTROLS.filter(
           (d) => d.category === cat && placements[d.id] === 'expanded',

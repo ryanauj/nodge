@@ -421,7 +421,6 @@
    without displacing it. ── */
 .dock-panel {
   position: absolute;
-  left: 0;
   width: 264px;
   max-width: calc(100vw - 16px);
   max-height: 60vh;
@@ -440,6 +439,16 @@
 
 .dock-panel--down {
   top: calc(100% + 8px);
+}
+
+/* Anchor to whichever side has room so the panel never runs off a viewport
+   edge: align-left extends rightward from the dock, align-right leftward. */
+.dock-panel--align-left {
+  left: 0;
+}
+
+.dock-panel--align-right {
+  right: 0;
 }
 
 .dock-section + .dock-section {
@@ -586,12 +595,17 @@
   cursor: pointer;
 }
 
-/* ── Phase 5: bottom-sheet panel container (spec §10.1) ── */
+/* ── Phase 5: bottom-sheet panel container (spec §10.1). Width-capped and
+   centered so it reads as a drawer rather than a full-bleed bar on a wide
+   desktop; auto margins center it within the left/right anchors without a
+   transform (which the slide-up animation owns). ── */
 .bottom-sheet {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  max-width: 720px;
+  margin-inline: auto;
   max-height: 60vh;
   display: flex;
   flex-direction: column;
