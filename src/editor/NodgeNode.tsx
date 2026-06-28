@@ -30,7 +30,7 @@ export function NodgeNode({ data }: NodeProps) {
       data-pattern={style.pattern}
       data-elevation={style.elevation}
       style={{
-        background: style.surface,
+        backgroundColor: style.surface,
         backgroundImage: pattern,
         backgroundSize: style.pattern === 'dots' || style.pattern === 'grid' ? '8px 8px' : undefined,
         color: style.content,

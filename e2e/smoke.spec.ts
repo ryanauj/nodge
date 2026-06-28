@@ -124,7 +124,7 @@ test('Phase 3: create a second board, switch boards, swap the palette', async ({
   // Add a node on Board 1, then re-skin via the per-view palette switcher (§8.4).
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
-  const palettePanel = page.getByRole('region', { name: 'Palette' })
+  const palettePanel = page.getByRole('region', { name: 'Palette', exact: true })
   await expect(palettePanel).toBeVisible()
   await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
   // The node re-skins to the Midnight surface (#1f2937 → rgb(31, 41, 55)).
