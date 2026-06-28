@@ -87,8 +87,9 @@ function EditorCanvas() {
     mutationFn: async () => {
       const gw = await getGateway()
       const count = nodesRef.current.length
-      const x = 120 + (count % 5) * 170
-      const y = 90 + Math.floor(count / 5) * 120
+      // Spread placements clear of the top-left toolbar / edge chrome.
+      const x = 250 + (count % 5) * 180
+      const y = 200 + Math.floor(count / 5) * 120
       return gw.addNode(ids!.boardId, ids!.viewId, { name: `Node ${count + 1}`, x, y })
     },
     onSuccess: invalidateDiagram,
