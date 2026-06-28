@@ -18,6 +18,21 @@ function trackErrors(page: Page): string[] {
   return errors
 }
 
+/** Open a dock panel into its bottom sheet (the single panel surface). */
+async function openDockPanel(page: Page, label: string, title: string) {
+  const dock = page.getByRole('region', { name: 'Canvas controls' })
+  const expand = dock.getByRole('button', { name: /more controls/ })
+  if ((await expand.getAttribute('aria-expanded')) !== 'true') await expand.click()
+  await dock.getByRole('button', { name: `${label} panel` }).click()
+  return page.getByRole('dialog', { name: title })
+}
+
+/** Dismiss an open bottom sheet via its close button. */
+async function closeSheet(page: Page, title: string) {
+  await page.getByRole('dialog', { name: title }).getByRole('button', { name: `Close ${title}` }).click()
+  await expect(page.getByRole('dialog', { name: title })).toHaveCount(0)
+}
+
 test('palette boundaries expose CSS variables; chrome re-themes on apply', async ({ page }) => {
   const errors = trackErrors(page)
   await page.goto('/')
@@ -34,8 +49,10 @@ test('palette boundaries expose CSS variables; chrome re-themes on apply', async
     .evaluate((el) => getComputedStyle(el).getPropertyValue('--nodge-surface-canvas').trim())
   expect(canvasVar).toMatch(/^#|rgb/)
 
-  // Apply a built-in palette (Midnight) to the app chrome via the palette editor.
-  const editor = page.getByRole('region', { name: 'Palette editor' })
+  // Apply a built-in palette (Midnight) to the app chrome via the palette editor
+  // (hosted in the Palette sheet, opened from the dock).
+  const paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  const editor = paletteSheet.getByRole('region', { name: 'Palette editor' })
   await expect(editor).toBeVisible()
   await editor.getByLabel('Edit palette').selectOption({ label: 'Midnight (built-in)' })
   await editor.getByRole('button', { name: 'Apply to chrome' }).click()
@@ -64,9 +81,10 @@ test('pin a node color; it survives a palette swap while others re-skin', async 
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
-  // Select the first node → the node-style panel opens; pin its surface.
+  // Select the first node → open the Properties sheet (Node style); pin surface.
   await page.locator('.react-flow__node').first().click()
-  const stylePanel = page.getByRole('region', { name: 'Node style' })
+  const propsSheet = await openDockPanel(page, 'Properties', 'Properties')
+  const stylePanel = propsSheet.getByRole('region', { name: 'Node style' })
   await expect(stylePanel).toBeVisible()
   await stylePanel.getByLabel('Pin surface').click()
   // Set the pinned surface to a distinctive red.
@@ -74,9 +92,11 @@ test('pin a node color; it survives a palette swap while others re-skin', async 
   await expect(surfaceInput).toBeEnabled()
   await surfaceInput.fill('#ff0000')
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
+  await closeSheet(page, 'Properties')
 
-  // Swap the view palette to Midnight (unpinned nodes → #1f2937).
-  const palettePanel = page.getByRole('region', { name: 'Palette', exact: true })
+  // Swap the view palette to Midnight (unpinned nodes → #1f2937) via the Palette sheet.
+  const paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
   await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
 
   // The pinned node keeps red; at least one node shows the Midnight surface.

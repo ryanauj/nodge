@@ -4,10 +4,10 @@ import { expect, test, type Page } from '@playwright/test'
  * Phase 5 mobile smoke (spec §12 acceptance). At a phone viewport (the Pixel 5
  * project, touch enabled) this exercises the full touch interaction model:
  *   - loads with no console errors;
- *   - switches tool mode (Select → Add → Connect) via the thumb-reach toolbar;
+ *   - switches tool mode (Select → Add → Connect) via the floating dock's slim bar;
  *   - adds two nodes by tapping empty canvas in Add mode (gesture model, no FAB);
  *   - connects them in Connect mode by tapping source then target (tap→tap edge);
- *   - opens a bottom-sheet panel and dismisses it (swipe/close);
+ *   - expands the dock, opens a bottom-sheet panel and dismisses it (swipe/close);
  *   - reloads and the diagram is restored from OPFS + the pointer.
  *
  * Also a no-gesture-conflict proof: in Add mode tapping empty canvas adds a node
@@ -35,16 +35,17 @@ test('mobile touch model: switch mode, add + connect via taps, sheet, reload', a
 
   await page.goto('/')
 
-  // Bootstrap completes → the thumb-reach tool toolbar is present (mobile only).
-  const toolbar = page.getByRole('toolbar', { name: 'Tool modes' })
+  // Bootstrap completes → the floating dock's slim bar is present (mobile only).
+  const dock = page.getByRole('region', { name: 'Canvas controls' })
+  const toolbar = dock.getByRole('toolbar', { name: 'Canvas tools' })
   await expect(toolbar).toBeVisible()
-  const selectMode = page.getByRole('button', { name: 'Select mode' })
-  const addMode = page.getByRole('button', { name: 'Add mode' })
-  const connectMode = page.getByRole('button', { name: 'Connect mode' })
+  const selectMode = dock.getByRole('button', { name: 'Select mode' })
+  const addMode = dock.getByRole('button', { name: 'Add mode' })
+  const connectMode = dock.getByRole('button', { name: 'Connect mode' })
   await expect(selectMode).toHaveAttribute('aria-pressed', 'true')
 
-  // Wait until the canvas is ready (the add-node toolbar button enables).
-  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+  // Wait until the canvas is ready (the dock's add-node button enables).
+  await expect(dock.getByRole('button', { name: 'Add node' })).toBeEnabled()
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
   // ── Switch to Add mode and add two nodes by tapping empty canvas. ──
@@ -68,8 +69,9 @@ test('mobile touch model: switch mode, add + connect via taps, sheet, reload', a
   await expect(page.locator('.react-flow__edge')).toHaveCount(1)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
-  // ── Open a bottom-sheet panel (Palette) and dismiss it. ──
-  const paletteTab = page.getByRole('button', { name: 'Palette panel' })
+  // ── Expand the dock, open a bottom-sheet panel (Palette) and dismiss it. ──
+  await dock.getByRole('button', { name: 'Show more controls' }).tap()
+  const paletteTab = dock.getByRole('button', { name: 'Palette panel' })
   await paletteTab.tap()
   const sheet = page.getByRole('dialog', { name: 'Palette' })
   await expect(sheet).toBeVisible()
@@ -104,16 +106,17 @@ test('mobile: in Select mode a one-finger pane drag pans (no stray edge/node)', 
 }) => {
   const errors = trackErrors(page)
   await page.goto('/')
-  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+  const dock = page.getByRole('region', { name: 'Canvas controls' })
+  await expect(dock.getByRole('button', { name: 'Add node' })).toBeEnabled()
 
   // Add one node so there is something to (not) disturb.
-  await page.getByRole('button', { name: 'Add node' }).first().click()
+  await dock.getByRole('button', { name: 'Add node' }).tap()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
   // Select mode is the default. A drag across empty canvas pans — it must not
   // create a node or an edge (gesture disambiguation, spec §10.2).
-  await expect(page.getByRole('button', { name: 'Select mode' })).toHaveAttribute(
+  await expect(dock.getByRole('button', { name: 'Select mode' })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
