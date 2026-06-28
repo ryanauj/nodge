@@ -3,6 +3,7 @@ import { createMemorySqlite } from '../db/wasm'
 import { LocalGateway, type GatewayDeps } from './LocalGateway'
 
 export * from './types'
+export { buildClipboard, parseClipboard, serializeClipboard } from './clipboard'
 export { LocalGateway, type GatewayDeps } from './LocalGateway'
 
 /**

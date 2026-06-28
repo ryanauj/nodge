@@ -106,6 +106,15 @@ export interface PrototypeInput {
   linkScaffold?: ExternalLink[]
 }
 
+export interface PrototypePatch {
+  name?: string
+  shape?: string | null
+  defaultLabel?: string
+  style?: StyleDelta
+  metadata?: Metadata
+  linkScaffold?: ExternalLink[]
+}
+
 export interface BoardInput {
   name: string
   description?: string
@@ -186,6 +195,169 @@ export interface ConnectNodesResult {
   edge: Edge
 }
 
+/**
+ * Snapshot a selected node (and its base entity/prototype) into a new node
+ * prototype (spec §9.1 "Save as prototype"). The new prototype captures the
+ * node's resolved shape + label + the entity's style override + metadata.
+ */
+export interface CreatePrototypeFromNodeInput {
+  nodeId: Uuid
+  name: string
+  /** Override the snapshotted shape; otherwise inherit the source's. */
+  shape?: string | null
+}
+
+/** Snapshot a selected edge (and its base relationship) into a new relationship prototype. */
+export interface CreatePrototypeFromEdgeInput {
+  edgeId: Uuid
+  name: string
+}
+
+/**
+ * Refresh a prototype's current style + metadata onto entities/relationships
+ * linked to it (spec §9.2 — opt-in, never automatic). Supply explicit ids, or
+ * `all: true` to batch every linked entity/relationship of the prototype.
+ */
+export interface RefreshFromPrototypeInput {
+  prototypeId: Uuid
+  /** Apply to these entity ids (node prototype) / relationship ids (rel prototype). */
+  ids?: Uuid[]
+  /** Apply to every entity/relationship currently linked to the prototype. */
+  all?: boolean
+}
+
+export interface RefreshFromPrototypeResult {
+  /** Ids of the entities (node prototype) or relationships (rel prototype) refreshed. */
+  refreshed: Uuid[]
+}
+
+/**
+ * Drag-to-create into empty canvas, placing a NEW node for an EXISTING entity
+ * and connecting it to the source node (spec §9.4 path a). One undoable command.
+ */
+export interface ConnectToExistingEntityInput {
+  sourceNodeId: Uuid
+  entityId: Uuid
+  x: number
+  y: number
+  directed?: boolean
+  label?: string
+  relationshipPrototypeId?: Uuid | null
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
+/**
+ * Drag-to-create into empty canvas, creating a NEW entity (seeded from a
+ * prototype) + node and connecting it to the source node (spec §9.4 path b).
+ */
+export interface ConnectToNewEntityInput {
+  sourceNodeId: Uuid
+  name: string
+  x: number
+  y: number
+  prototypeId?: Uuid | null
+  directed?: boolean
+  label?: string
+  relationshipPrototypeId?: Uuid | null
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
+export interface ConnectToEntityResult {
+  entity: Entity
+  node: Node
+  position: NodePositionInput
+  relationship: Relationship
+  edge: Edge
+}
+
+/**
+ * Clipboard payload for copy/paste = placement (spec §9.3, Decision 10). Captures
+ * the selected nodes (referencing their *same* entities) and the edges internal
+ * to the selection (referencing their *same* relationships). Serializable as JSON
+ * for cross-document paste.
+ */
+export interface ClipboardNode {
+  /** Source node id, used only to wire up internal edges within the clipboard. */
+  refId: Uuid
+  entityId: Uuid
+  label: string
+  styleOverride: StyleDelta
+  /** Position relative to the selection's top-left anchor. */
+  dx: number
+  dy: number
+}
+
+export interface ClipboardEdge {
+  relationshipId: Uuid
+  sourceRefId: Uuid
+  targetRefId: Uuid
+  sourceHandle?: string | null
+  targetHandle?: string | null
+  label: string
+  styleOverride: StyleDelta
+}
+
+export interface Clipboard {
+  kind: 'nodge/clipboard'
+  version: 1
+  nodes: ClipboardNode[]
+  edges: ClipboardEdge[]
+}
+
+/** Where to drop a pasted clipboard (the new selection's top-left anchor). */
+export interface PasteClipboardInput {
+  clipboard: Clipboard
+  x: number
+  y: number
+}
+
+export interface PasteClipboardResult {
+  nodes: Node[]
+  edges: Edge[]
+  positions: NodePositionInput[]
+}
+
+// ── Cross-reference index (spec §7.4) ──
+
+export interface EntityPlacement {
+  nodeId: Uuid
+  boardId: Uuid
+  boardName: string
+  label: string
+}
+
+export interface EntityEdgePlacement {
+  edgeId: Uuid
+  boardId: Uuid
+  relationshipId: Uuid
+}
+
+export interface EntityRelationship {
+  relationshipId: Uuid
+  role: 'source' | 'target'
+  otherEntityId: Uuid
+  label: string
+  directed: boolean
+}
+
+export interface EntityBacklink {
+  fromEntityId: Uuid
+  linkId: Uuid
+  kind: 'entity' | 'diagram'
+  label: string
+}
+
+/** Everything that references an entity: its placements, edges, relationships, backlinks. */
+export interface EntityUsage {
+  entityId: Uuid
+  placements: EntityPlacement[]
+  edgePlacements: EntityEdgePlacement[]
+  relationships: EntityRelationship[]
+  backlinks: EntityBacklink[]
+}
+
 export interface PaletteInput {
   name: string
   tokens?: PaletteTokens
@@ -228,10 +400,40 @@ export interface DataGateway {
   // Composite canvas gestures (single undoable command each)
   addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult>
   connectNodes(boardId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult>
+  /** Drag-to-create: place a new node for an existing entity + connect it (§9.4 path a). */
+  connectToExistingEntity(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: ConnectToExistingEntityInput,
+  ): Promise<ConnectToEntityResult>
+  /** Drag-to-create: create a new prototype-seeded entity + node + connect it (§9.4 path b). */
+  connectToNewEntity(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: ConnectToNewEntityInput,
+  ): Promise<ConnectToEntityResult>
+  /** Paste a clipboard as new placements of the same entities/relationships (§9.3). */
+  pasteClipboard(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: PasteClipboardInput,
+  ): Promise<PasteClipboardResult>
+
+  // Cross-reference index (derived, §7.4)
+  getEntityUsages(entityId: Uuid): Promise<EntityUsage>
 
   // Prototypes / Palettes / StyleProfiles
   listPrototypes(graphId: Uuid): Promise<Prototype[]>
   createPrototype(graphId: Uuid, input: PrototypeInput): Promise<Prototype>
+  updatePrototype(id: Uuid, patch: PrototypePatch): Promise<Prototype>
+  /** Snapshot a node's style/shape/label/metadata into a new node prototype (§9.1). */
+  createPrototypeFromNode(input: CreatePrototypeFromNodeInput): Promise<Prototype>
+  /** Snapshot an edge's relationship style/label into a new relationship prototype (§9.1). */
+  createPrototypeFromEdge(input: CreatePrototypeFromEdgeInput): Promise<Prototype>
+  /** Fork an existing prototype into a new row (§9.1 "Prototypes can be duplicated"). */
+  duplicatePrototype(prototypeId: Uuid, name?: string): Promise<Prototype>
+  /** Re-apply a prototype's current style+metadata to linked entities/relationships (§9.2). */
+  refreshFromPrototype(input: RefreshFromPrototypeInput): Promise<RefreshFromPrototypeResult>
   listPalettes(graphId: Uuid): Promise<Palette[]>
   createPalette(graphId: Uuid, input: PaletteInput): Promise<Palette>
   listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]>
