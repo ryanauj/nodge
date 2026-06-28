@@ -61,6 +61,9 @@ export interface FloatingDockProps {
   canRedo: boolean
   /** A diagram is resolved and ready — enables add / paste / save. */
   canAct: boolean
+  /** An add-node mutation is in flight — disables Add so rapid taps can't place
+   *  two nodes at the same (stale-count) position. */
+  addBusy?: boolean
   /** Something is selected — enables copy. */
   hasSelection: boolean
   onAddNode: () => void
@@ -247,7 +250,7 @@ export function FloatingDock(props: FloatingDockProps) {
       case 'redo':
         return { onClick: props.onRedo, disabled: !props.canRedo }
       case 'add':
-        return { onClick: props.onAddNode, disabled: !props.canAct }
+        return { onClick: props.onAddNode, disabled: !props.canAct || !!props.addBusy }
       case 'copy':
         return { onClick: props.onCopy, disabled: !props.hasSelection }
       case 'paste':
@@ -294,8 +297,30 @@ export function FloatingDock(props: FloatingDockProps) {
     )
   }
 
+  /** The Select/Connect/Add segmented tool-mode group (placement-configurable). */
+  const renderModes = () => (
+    <div key="modes" className="dock-modes" role="group" aria-label="Tool mode">
+      {TOOL_MODES.map((m) => (
+        <button
+          key={m}
+          type="button"
+          className="dock-btn dock-mode-btn"
+          aria-pressed={mode === m}
+          aria-label={`${TOOL_MODE_LABELS[m]} mode`}
+          onClick={() => setMode(m)}
+        >
+          <span className="dock-btn__icon" aria-hidden="true">
+            {TOOL_MODE_ICONS[m]}
+          </span>
+          <span className="dock-btn__label">{TOOL_MODE_LABELS[m]}</span>
+        </button>
+      ))}
+    </div>
+  )
+
   /** A full icon+label control for the expanded panel. */
   const renderExpanded = (def: DockControlDef) => {
+    if (def.kind === 'modes') return renderModes()
     if (def.kind === 'toggle') {
       const checked = def.id === 'toggle:minimap' ? showMinimap : showBackground
       const onChange = def.id === 'toggle:minimap' ? setShowMinimap : setShowBackground
@@ -320,7 +345,10 @@ export function FloatingDock(props: FloatingDockProps) {
     )
   }
 
-  const slimControls = DOCK_CONTROLS.filter((d) => placements[d.id] === 'slim')
+  const modesPlacement = placements['modes'] ?? 'slim'
+  const slimControls = DOCK_CONTROLS.filter(
+    (d) => d.id !== 'modes' && placements[d.id] === 'slim',
+  )
   const isBottomHalf = typeof window !== 'undefined' && pos.y > window.innerHeight / 2
   const containerStyle: CSSProperties = { left: pos.x, top: pos.y }
 
@@ -345,23 +373,7 @@ export function FloatingDock(props: FloatingDockProps) {
         >
           ⠿
         </span>
-        <div className="dock-modes" role="group" aria-label="Tool mode">
-          {TOOL_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              className="dock-btn dock-mode-btn"
-              aria-pressed={mode === m}
-              aria-label={`${TOOL_MODE_LABELS[m]} mode`}
-              onClick={() => setMode(m)}
-            >
-              <span className="dock-btn__icon" aria-hidden="true">
-                {TOOL_MODE_ICONS[m]}
-              </span>
-              <span className="dock-btn__label">{TOOL_MODE_LABELS[m]}</span>
-            </button>
-          ))}
-        </div>
+        {modesPlacement === 'slim' && renderModes()}
         {slimControls.length > 0 && (
           <div className="dock-slim" role="group" aria-label="Quick controls">
             {slimControls.map(renderSlim)}

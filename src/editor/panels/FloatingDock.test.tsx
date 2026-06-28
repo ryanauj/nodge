@@ -104,4 +104,15 @@ describe('FloatingDock', () => {
     fireEvent.click(within(saveGroup).getByRole('radio', { name: 'Slim' }))
     expect(useDockPrefs.getState().placements.save).toBe('slim')
   })
+
+  it('the tool modes are configurable: hiding them removes the mode buttons', () => {
+    renderDock()
+    expect(screen.getByRole('button', { name: 'Select mode' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show more controls' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }))
+    const modesGroup = screen.getByRole('radiogroup', { name: 'Tool mode placement' })
+    fireEvent.click(within(modesGroup).getByRole('radio', { name: 'Hidden' }))
+    expect(useDockPrefs.getState().placements.modes).toBe('hidden')
+    expect(screen.queryByRole('button', { name: 'Select mode' })).not.toBeInTheDocument()
+  })
 })

@@ -9,41 +9,6 @@
   background: var(--nodge-surface-canvas, transparent);
 }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  padding: 6px;
-  background: var(--nodge-chrome, rgba(255, 255, 255, 0.92));
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-}
-
-.toolbar button {
-  /* ≥44px touch targets (spec §10.2). */
-  min-height: 36px;
-  padding: 6px 12px;
-  font-size: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.toolbar button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.toolbar-sep {
-  width: 1px;
-  align-self: stretch;
-  background: rgba(0, 0, 0, 0.12);
-  margin: 0 2px;
-}
-
 .editor-status {
   padding: 6px 12px;
   font-size: 13px;
@@ -51,30 +16,8 @@
   border-radius: 6px;
 }
 
-/* The desktop top toolbar is hidden on narrow (touch) viewports, where the
-   floating dock owns the chrome instead. */
-@media (max-width: 640px) {
-  .toolbar {
-    display: none;
-  }
-}
-
-/* ── Phase 2: side panels (prototype library + properties / cross-reference) ── */
-.side-panels {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: 320px;
-  max-width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  z-index: 6;
-  pointer-events: none;
-}
-
+/* ── Panels: hosted in the bottom sheets the floating dock opens (every
+   viewport). They theme from the app-chrome PaletteRoot (§8.4). ── */
 .panel {
   pointer-events: auto;
   /* Chrome panels theme from the app-chrome PaletteRoot (§8.4). Falls back to a
@@ -271,19 +214,6 @@
   text-align: right;
 }
 
-@media (max-width: 640px) {
-  .side-panels {
-    width: 100vw;
-    left: 0;
-    right: 0;
-    top: auto;
-    height: 45vh;
-    bottom: 0;
-    flex-direction: row;
-    overflow-x: auto;
-  }
-}
-
 /* ── Phase 4: palette editor / style-profile / link-unlink controls ── */
 .style-row {
   display: flex;
@@ -364,7 +294,6 @@
 /* ── Phase 5: focus-visible rings sourced from the palette's border.focus ──
    (spec §10.4). Applied to every interactive chrome control. The ring color
    follows the active PaletteRoot so it stays contrast-aligned with the theme. */
-.toolbar button:focus-visible,
 .panel button:focus-visible,
 .panel-input:focus-visible,
 .panel-field input:focus-visible,
@@ -381,21 +310,14 @@
   outline-offset: 2px;
 }
 
-/* ── Draggable floating dock (mobile): a slim always-visible bar (tool modes +
-   the controls placed `slim`) plus an expandable panel and a Customize section.
-   Fixed at the user's persisted position; mobile-only (desktop uses the top
-   toolbar + side-panel column). The expanded panel anchors above or below the
-   bar depending on which half of the screen the dock sits in. ── */
+/* ── Draggable floating dock — the single control surface on every viewport: a
+   slim always-visible bar (tool modes + the controls placed `slim`) plus an
+   expandable panel and a Customize section. Fixed at the user's persisted
+   position. The expanded panel anchors above or below the bar depending on
+   which half of the screen the dock sits in. ── */
 .dock {
   position: fixed;
-  display: none;
   z-index: 8;
-}
-
-@media (max-width: 640px) {
-  .dock {
-    display: block;
-  }
 }
 
 .dock-bar {
@@ -745,22 +667,6 @@
   border: none;
   box-shadow: none;
   padding: 4px 0;
-}
-
-/* The floating dock and bottom sheets are mobile-only; the desktop side-panel
-   column and the top toolbar own the desktop layout. */
-@media (min-width: 641px) {
-  .bottom-sheet {
-    display: none;
-  }
-}
-
-/* On narrow viewports, hide the desktop side-panel column — its panels surface
-   through the bottom sheets the dock opens instead. */
-@media (max-width: 640px) {
-  .side-panels {
-    display: none;
-  }
 }
 
 /* ── Phase 5: enlarged, finger-sized connect handles on the selected node

@@ -15,6 +15,25 @@ function trackErrors(page: Page): string[] {
   return errors
 }
 
+/**
+ * Open a panel from the floating dock: expand it if needed, then tap the panel
+ * opener, which raises the matching bottom sheet (the single panel surface on
+ * every viewport now). Returns the sheet dialog locator.
+ */
+async function openDockPanel(page: Page, label: string, title: string) {
+  const dock = page.getByRole('region', { name: 'Canvas controls' })
+  const expand = dock.getByRole('button', { name: /more controls/ })
+  if ((await expand.getAttribute('aria-expanded')) !== 'true') await expand.click()
+  await dock.getByRole('button', { name: `${label} panel` }).click()
+  return page.getByRole('dialog', { name: title })
+}
+
+/** Dismiss an open bottom sheet via its close button. */
+async function closeSheet(page: Page, title: string) {
+  await page.getByRole('dialog', { name: title }).getByRole('button', { name: `Close ${title}` }).click()
+  await expect(page.getByRole('dialog', { name: title })).toHaveCount(0)
+}
+
 test('loads, adds two nodes and connects them with no console errors', async ({ page }) => {
   const errors = trackErrors(page)
 
@@ -71,20 +90,25 @@ test('Phase 2: prototype library stamps a node and selection opens properties', 
 }) => {
   const errors = trackErrors(page)
   await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
 
-  // The prototype library panel renders with the seeded built-ins.
-  const protoPanel = page.getByRole('region', { name: 'Prototype library' })
+  // The prototype library panel (in the Prototypes sheet) renders the built-ins.
+  const protoSheet = await openDockPanel(page, 'Prototypes', 'Prototypes')
+  const protoPanel = protoSheet.getByRole('region', { name: 'Prototype library' })
   await expect(protoPanel).toBeVisible()
   await expect(protoPanel.getByText('Service')).toBeVisible()
 
   // Stamp a node from the Service prototype → a placement appears on the canvas.
   await protoPanel.getByRole('button', { name: 'Create from Service' }).click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  // Close the sheet so the node is selectable on the (uncovered) canvas.
+  await closeSheet(page, 'Prototypes')
 
-  // Selecting the node opens the entity properties / cross-reference panel.
+  // Selecting the node makes the cross-reference panel available; open it.
   await page.locator('.react-flow__node').first().click()
-  await expect(page.getByRole('region', { name: 'Entity properties' })).toBeVisible()
-  await expect(page.getByText(/Used in \/ Connections/)).toBeVisible()
+  const crossSheet = await openDockPanel(page, 'Cross-reference', 'Cross-reference')
+  await expect(crossSheet.getByRole('region', { name: 'Entity properties' })).toBeVisible()
+  await expect(crossSheet.getByText(/Used in \/ Connections/)).toBeVisible()
 
   expect(errors).toEqual([])
 })
@@ -97,8 +121,11 @@ test('Phase 3: create a second board, switch boards, swap the palette', async ({
   await expect(page).toHaveURL(/\/board\/.+\/view\/.+/)
   const firstUrl = page.url()
 
-  // The boards/views switcher is present with the seeded board + view.
-  const boardsPanel = page.getByRole('region', { name: 'Boards and views' })
+  // The boards/views switcher (in the Palette sheet) shows the seeded board+view.
+  const addNode = page.getByRole('button', { name: 'Add node' }).first()
+  await expect(addNode).toBeEnabled()
+  let paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  let boardsPanel = paletteSheet.getByRole('region', { name: 'Boards and views' })
   await expect(boardsPanel).toBeVisible()
   await expect(boardsPanel.getByLabel('Open board Board 1')).toBeVisible()
 
@@ -110,21 +137,25 @@ test('Phase 3: create a second board, switch boards, swap the palette', async ({
   await expect(page).toHaveURL(/\/board\/.+\/view\/.+/)
   await expect(boardsPanel.getByLabel('Open board Board 2')).toHaveAttribute('aria-current', 'true')
 
-  // Add a node on the new board, then switch back to Board 1 (separate subgraph).
-  const addNode = page.getByRole('button', { name: 'Add node' }).first()
-  await expect(addNode).toBeEnabled()
+  // Add a node on the new board (close the sheet so the dock is reachable), then
+  // switch back to Board 1 (a separate subgraph).
+  await closeSheet(page, 'Palette')
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
 
+  paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  boardsPanel = paletteSheet.getByRole('region', { name: 'Boards and views' })
   await boardsPanel.getByLabel('Open board Board 1').click()
   await expect(boardsPanel.getByLabel('Open board Board 1')).toHaveAttribute('aria-current', 'true')
+  await closeSheet(page, 'Palette')
   // Board 1 has its own (empty) membership.
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
 
   // Add a node on Board 1, then re-skin via the per-view palette switcher (§8.4).
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
-  const palettePanel = page.getByRole('region', { name: 'Palette', exact: true })
+  paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
   await expect(palettePanel).toBeVisible()
   await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
   // The node re-skins to the Midnight surface (#1f2937 → rgb(31, 41, 55)).

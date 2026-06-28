@@ -33,7 +33,7 @@ async function activeBoardId(gw: LocalGateway): Promise<string> {
 describe('App (Phase 1 editor)', () => {
   it('renders the canvas toolbar', async () => {
     await renderApp()
-    expect(await screen.findByRole('toolbar', { name: 'Editor toolbar' })).toBeInTheDocument()
+    expect(await screen.findByRole('toolbar', { name: 'Canvas tools' })).toBeInTheDocument()
   })
 
   it('bootstraps a default diagram and adds a node through the gateway', async () => {

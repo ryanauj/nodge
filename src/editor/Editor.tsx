@@ -751,35 +751,6 @@ function EditorCanvas() {
         {showBackground && <Background />}
         <Controls />
         {showMinimap && <MiniMap pannable zoomable />}
-        <Panel position="top-left">
-          <div className="toolbar" role="toolbar" aria-label="Editor toolbar">
-            <button onClick={() => addNode.mutate()} disabled={!ready || addNode.isPending}>
-              Add node
-            </button>
-            <button onClick={() => undo.mutate()} disabled={!canUndo} aria-label="Undo">
-              Undo
-            </button>
-            <button onClick={() => redo.mutate()} disabled={!canRedo} aria-label="Redo">
-              Redo
-            </button>
-            <span className="toolbar-sep" />
-            <button onClick={() => void copySelection()} disabled={!selectedNodeId} aria-label="Copy">
-              Copy
-            </button>
-            <button
-              onClick={() => pasteClipboard.mutate()}
-              disabled={!ids}
-              aria-label="Paste"
-            >
-              Paste
-            </button>
-            <span className="toolbar-sep" />
-            <button onClick={() => save.mutate()} disabled={!ids}>
-              Save
-            </button>
-            <button onClick={() => load.mutate()}>Load</button>
-          </div>
-        </Panel>
         {busy && (
           <Panel position="top-center">
             <span className="editor-status" data-testid="editor-busy">
@@ -789,19 +760,9 @@ function EditorCanvas() {
         )}
       </ReactFlow>
 
-      {/* Side panels (desktop) — the CSS hides this column on narrow viewports,
-          where the same panels surface through the bottom sheets below. */}
-      {ids && (
-        <aside className="side-panels" aria-label="Editor panels">
-          {sheetGroups.palette}
-          {sheetGroups.properties}
-          {sheetGroups.prototypes}
-          {sheetGroups.crossref}
-        </aside>
-      )}
-
-      {/* Bottom sheets (mobile) — the CSS hides these on desktop. Open/close is
-          client UI state in the tool-mode store; swipe or Esc dismisses (§10.1). */}
+      {/* Bottom sheets host the panels on every viewport (the floating dock's
+          Panels buttons open them). Open/close is client UI state in the
+          tool-mode store; swipe or Esc dismisses (§10.1). */}
       {ids && sheet && availableSheets.has(sheet) && (
         <BottomSheet title={SHEET_LABELS[sheet]} open onClose={closeSheet}>
           {sheetGroups[sheet]}
@@ -819,19 +780,19 @@ function EditorCanvas() {
         />
       )}
 
-      {/* Draggable floating dock (mobile): the Select/Connect/Add tool modes plus
-          a customisable, two-level set of controls (slim row + expandable panel)
-          for undo/redo/add, copy/paste, the panel openers, the display toggles,
-          and Save/Load. Replaces the old bottom tool bar + add FAB. Tool/display
-          state is client UI state; the editing/file actions call back into the
-          gateway-backed mutations above. Mobile-only via CSS — desktop keeps the
-          top toolbar + side-panel column. */}
+      {/* Draggable floating dock — the single control surface on every viewport.
+          A slim row (the Select/Connect/Add modes by default + undo/redo/add)
+          plus an expandable, customisable panel for copy/paste, the panel
+          openers, the display toggles, and Save/Load. Tool/display state is
+          client UI state; the editing/file actions call back into the
+          gateway-backed mutations above. */}
       {ids && (
         <FloatingDock
           availableSheets={[...availableSheets]}
           canUndo={canUndo}
           canRedo={canRedo}
           canAct={ready}
+          addBusy={addNode.isPending}
           hasSelection={!!selectedNodeId}
           onAddNode={() => addNode.mutate()}
           onUndo={() => undo.mutate()}

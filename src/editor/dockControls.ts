@@ -6,9 +6,9 @@
  * the panel openers, the file actions, and the display toggles — is a registry
  * entry here, and the user decides **where** each one lives via a per-control
  * *placement*: `slim` (the always-visible thumb row), `expanded` (revealed by
- * the dock's expand toggle), or `hidden`. The tool modes (Select/Connect/Add)
- * are deliberately NOT in this registry — they are the core interaction gesture
- * and stay pinned to the slim row.
+ * the dock's expand toggle), or `hidden`. The Select/Connect/Add tool modes are
+ * a registry entry too (`id: 'modes'`, a segmented group) so their placement is
+ * configurable like everything else; they default to the slim row.
  *
  * Placements live in the {@link useDockPrefs} Zustand store and persist to
  * localStorage (one JSON blob), so a user's customised layout survives reloads,
@@ -30,14 +30,15 @@ export const PLACEMENT_LABELS: Record<Placement, string> = {
 
 /**
  * The kind of a control drives how the dock renders it:
+ *  - `modes`    — the Select/Connect/Add segmented tool-mode group.
  *  - `action`   — a one-shot button (undo, save, …), possibly disable-able.
  *  - `panel`    — opens/toggles a bottom sheet; reflects open state.
  *  - `toggle`   — an on/off switch bound to a canvas display pref.
  */
-export type DockControlKind = 'action' | 'panel' | 'toggle'
+export type DockControlKind = 'modes' | 'action' | 'panel' | 'toggle'
 
 /** The category a control is grouped under in the expanded panel. */
-export type DockCategory = 'Edit' | 'Panels' | 'Display' | 'File'
+export type DockCategory = 'Modes' | 'Edit' | 'Panels' | 'Display' | 'File'
 
 /** A static descriptor for one configurable dock control. */
 export interface DockControlDef {
@@ -75,6 +76,14 @@ const SHEET_SHORT_LABELS: Record<SheetKey, string> = {
  * from {@link SHEET_KEYS} so adding a sheet automatically surfaces a control.
  */
 export const DOCK_CONTROLS: DockControlDef[] = [
+  {
+    id: 'modes',
+    label: 'Tool modes',
+    ariaLabel: 'Tool mode',
+    icon: '⬚',
+    kind: 'modes',
+    category: 'Modes',
+  },
   { id: 'undo', label: 'Undo', ariaLabel: 'Undo', icon: '↶', kind: 'action', category: 'Edit' },
   { id: 'redo', label: 'Redo', ariaLabel: 'Redo', icon: '↷', kind: 'action', category: 'Edit' },
   { id: 'add', label: 'Add', ariaLabel: 'Add node', icon: '＋', kind: 'action', category: 'Edit' },
@@ -112,14 +121,15 @@ export const DOCK_CONTROLS: DockControlDef[] = [
 ]
 
 /** The order categories appear in the expanded panel. */
-export const DOCK_CATEGORIES: DockCategory[] = ['Panels', 'Edit', 'Display', 'File']
+export const DOCK_CATEGORIES: DockCategory[] = ['Modes', 'Panels', 'Edit', 'Display', 'File']
 
 /**
- * Default placement for each control: the high-frequency editing actions sit in
- * the slim row; everything occasional is one expand-tap away; nothing is hidden
- * out of the box.
+ * Default placement for each control: the tool modes and the high-frequency
+ * editing actions sit in the slim row; everything occasional is one expand-tap
+ * away; nothing is hidden out of the box.
  */
 const DEFAULT_PLACEMENTS: Record<string, Placement> = {
+  modes: 'slim',
   undo: 'slim',
   redo: 'slim',
   add: 'slim',
