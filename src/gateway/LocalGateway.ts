@@ -55,6 +55,7 @@ import type {
   CreatePrototypeFromNodeInput,
   DataGateway,
   EdgeInput,
+  EdgePatch,
   EntityInput,
   EntityPatch,
   EntityBacklink,
@@ -69,6 +70,7 @@ import type {
   NodePatch,
   NodePositionInput,
   PaletteInput,
+  PalettePatch,
   PasteClipboardInput,
   PasteClipboardResult,
   PlaceEntityInput,
@@ -80,6 +82,7 @@ import type {
   RelationshipInput,
   RelationshipPatch,
   StyleProfileInput,
+  StyleProfilePatch,
   Uuid,
   ViewDetail,
   ViewInput,
@@ -189,6 +192,7 @@ export class LocalGateway implements DataGateway {
       graphId,
       name: input.name,
       prototypeId: input.prototypeId ?? null,
+      styleProfileId: input.styleProfileId ?? null,
       styleOverride: input.styleOverride ?? {},
       links: input.links ?? [],
       metadata: input.metadata ?? {},
@@ -309,6 +313,7 @@ export class LocalGateway implements DataGateway {
       boardId,
       entityId: input.entityId,
       label: input.label ?? '',
+      styleProfileId: input.styleProfileId ?? null,
       styleOverride: input.styleOverride ?? {},
     }
     return this.commands.execute(command('createNode', (m) => m.insert(nodeTable, node)))
@@ -337,6 +342,18 @@ export class LocalGateway implements DataGateway {
       styleOverride: input.styleOverride ?? {},
     }
     return this.commands.execute(command('createEdge', (m) => m.insert(edgeTable, edge)))
+  }
+
+  /**
+   * Patch an edge placement (spec §8.3 — the edge-level link/unlink affordance).
+   * Pinning an edge style key writes a raw literal into `Edge.styleOverride`;
+   * unlinking removes the key so the value follows the palette again. Routed
+   * through the command bus as one undoable command, exactly like `updateNode`.
+   */
+  async updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge> {
+    const current = await this.require(await this.repo.getById(edgeTable, id), 'edge', id)
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(command('updateEdge', (m) => m.put(edgeTable, updated)))
   }
 
   async deleteEdge(id: Uuid): Promise<void> {
@@ -400,6 +417,7 @@ export class LocalGateway implements DataGateway {
       boardId,
       entityId: entity.id,
       label: input.label ?? '',
+      styleProfileId: null,
       styleOverride: input.styleOverride ?? {},
     }
     const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
@@ -436,6 +454,9 @@ export class LocalGateway implements DataGateway {
       graphId: board.graphId,
       name: input.name,
       prototypeId: input.prototypeId ?? null,
+      // Seed the entity's referenced StyleProfile from the prototype's default
+      // look (§9.1) — persists like the rest of the prototype seed.
+      styleProfileId: seed.styleProfileId,
       styleOverride: seed.styleOverride,
       links: [],
       metadata: seed.metadata,
@@ -445,6 +466,7 @@ export class LocalGateway implements DataGateway {
       boardId,
       entityId: entity.id,
       label: input.name,
+      styleProfileId: null,
       styleOverride: input.styleOverride ?? {},
     }
     const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
@@ -509,13 +531,20 @@ export class LocalGateway implements DataGateway {
   private async seedFromPrototype(
     prototypeId: Uuid | null | undefined,
     entityStyleOverride: Record<string, unknown> | undefined,
-  ): Promise<{ styleOverride: Record<string, unknown>; metadata: Record<string, unknown> }> {
-    if (!prototypeId) return { styleOverride: entityStyleOverride ?? {}, metadata: {} }
+  ): Promise<{
+    styleOverride: Record<string, unknown>
+    metadata: Record<string, unknown>
+    styleProfileId: Uuid | null
+  }> {
+    if (!prototypeId)
+      return { styleOverride: entityStyleOverride ?? {}, metadata: {}, styleProfileId: null }
     const proto = await this.repo.getById(prototypeTable, prototypeId)
-    if (!proto) return { styleOverride: entityStyleOverride ?? {}, metadata: {} }
+    if (!proto)
+      return { styleOverride: entityStyleOverride ?? {}, metadata: {}, styleProfileId: null }
     return {
       styleOverride: { ...proto.style, ...(entityStyleOverride ?? {}) },
       metadata: { ...proto.metadata },
+      styleProfileId: proto.styleProfileId ?? null,
     }
   }
 
@@ -540,6 +569,7 @@ export class LocalGateway implements DataGateway {
       boardId,
       entityId: entity.id,
       label: '',
+      styleProfileId: null,
       styleOverride: {},
     }
     const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
@@ -593,6 +623,7 @@ export class LocalGateway implements DataGateway {
       graphId: board.graphId,
       name: input.name,
       prototypeId: input.prototypeId ?? null,
+      styleProfileId: seed.styleProfileId,
       styleOverride: seed.styleOverride,
       links: [],
       metadata: seed.metadata,
@@ -602,6 +633,7 @@ export class LocalGateway implements DataGateway {
       boardId,
       entityId: entity.id,
       label: input.name,
+      styleProfileId: null,
       styleOverride: {},
     }
     const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
@@ -657,6 +689,7 @@ export class LocalGateway implements DataGateway {
         boardId,
         entityId: cn.entityId, // SAME entity — never forks identity (§9.3)
         label: cn.label,
+        styleProfileId: null,
         styleOverride: { ...cn.styleOverride },
       }
       refToNodeId.set(cn.refId, node.id)
@@ -773,6 +806,7 @@ export class LocalGateway implements DataGateway {
       name: input.name,
       shape: input.shape ?? null,
       defaultLabel: input.defaultLabel ?? '',
+      styleProfileId: input.styleProfileId ?? null,
       style: input.style ?? {},
       metadata: input.metadata ?? {},
       linkScaffold: input.linkScaffold ?? [],
@@ -819,6 +853,8 @@ export class LocalGateway implements DataGateway {
       name: input.name,
       shape,
       defaultLabel: node.label || entity.name,
+      // Carry the entity's referenced profile as the new prototype's default look.
+      styleProfileId: entity.styleProfileId ?? null,
       style,
       metadata: { ...(proto?.metadata ?? {}), ...entity.metadata },
       linkScaffold: entity.links.map((l) => ({ ...l })),
@@ -850,6 +886,7 @@ export class LocalGateway implements DataGateway {
       name: input.name,
       shape: null,
       defaultLabel: edge.label || rel.label,
+      styleProfileId: null,
       style,
       metadata: { ...(proto?.metadata ?? {}), ...rel.metadata },
       linkScaffold: [],
@@ -872,6 +909,7 @@ export class LocalGateway implements DataGateway {
       name: name ?? `${source.name} copy`,
       shape: source.shape,
       defaultLabel: source.defaultLabel,
+      styleProfileId: source.styleProfileId ?? null,
       style: { ...source.style },
       metadata: { ...source.metadata },
       linkScaffold: source.linkScaffold.map((l) => ({ ...l })),
@@ -943,6 +981,39 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(command('createPalette', (m) => m.insert(paletteTable, palette)))
   }
 
+  /**
+   * Edit a palette's name/tokens (spec §8.4 token-level authoring). One undoable
+   * command. Editing a built-in's tokens clears the `builtin` flag so the user's
+   * edits read as a user palette (the seeded library stays pristine until forked).
+   */
+  async updatePalette(id: Uuid, patch: PalettePatch): Promise<Palette> {
+    const current = await this.require(await this.repo.getById(paletteTable, id), 'palette', id)
+    const next: Palette = { ...current }
+    if (patch.name !== undefined) next.name = patch.name
+    if (patch.tokens !== undefined) next.tokens = patch.tokens
+    if (patch.builtin !== undefined) next.builtin = patch.builtin
+    else if (patch.tokens !== undefined) next.builtin = false
+    const updated = this.bumpVersion(next)
+    return this.commands.execute(command('updatePalette', (m) => m.put(paletteTable, updated)))
+  }
+
+  async deletePalette(id: Uuid): Promise<void> {
+    await this.commands.execute(command('deletePalette', (m) => m.remove(paletteTable, { id })))
+  }
+
+  /** Fork a palette into a new editable (non-builtin) row (spec §8.4). */
+  async duplicatePalette(id: Uuid, name?: string): Promise<Palette> {
+    const source = await this.require(await this.repo.getById(paletteTable, id), 'palette', id)
+    const palette: Palette = {
+      ...this.stampNew(),
+      graphId: source.graphId,
+      name: name ?? `${source.name} copy`,
+      tokens: { ...source.tokens },
+      builtin: false,
+    }
+    return this.commands.execute(command('duplicatePalette', (m) => m.insert(paletteTable, palette)))
+  }
+
   async listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]> {
     return this.repo.list(styleProfileTable, { graphId })
   }
@@ -957,6 +1028,24 @@ export class LocalGateway implements DataGateway {
     }
     return this.commands.execute(
       command('createStyleProfile', (m) => m.insert(styleProfileTable, styleProfile)),
+    )
+  }
+
+  async updateStyleProfile(id: Uuid, patch: StyleProfilePatch): Promise<StyleProfile> {
+    const current = await this.require(
+      await this.repo.getById(styleProfileTable, id),
+      'styleProfile',
+      id,
+    )
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(
+      command('updateStyleProfile', (m) => m.put(styleProfileTable, updated)),
+    )
+  }
+
+  async deleteStyleProfile(id: Uuid): Promise<void> {
+    await this.commands.execute(
+      command('deleteStyleProfile', (m) => m.remove(styleProfileTable, { id })),
     )
   }
 

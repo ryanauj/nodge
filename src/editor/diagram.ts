@@ -12,6 +12,7 @@ import type {
   PaletteTokens,
   Prototype,
   Relationship,
+  StyleProfile,
 } from '../model'
 import type { BoardDetail, DataGateway, Uuid } from '../gateway'
 import { DEFAULT_PALETTE_TOKENS, resolveEdgeStyle, resolveNodeStyle } from './style'
@@ -27,6 +28,8 @@ export interface DiagramSource {
   entities: Map<Uuid, Entity>
   relationships: Map<Uuid, Relationship>
   prototypes: Map<Uuid, Prototype>
+  /** Referenced StyleProfiles, keyed by id — layered into the cascade (§8.3). */
+  styleProfiles: Map<Uuid, StyleProfile>
   paletteTokens: PaletteTokens
 }
 
@@ -53,13 +56,27 @@ export interface FlowEdge {
   style: ResolvedEdgeStyle
 }
 
+/** A referenced StyleProfile's style delta, or undefined when there is no ref. */
+function profileStyle(
+  src: DiagramSource,
+  styleProfileId: Uuid | null | undefined,
+): Record<string, unknown> | undefined {
+  return styleProfileId ? src.styleProfiles.get(styleProfileId)?.style : undefined
+}
+
 export function toFlowNodes(src: DiagramSource): FlowNode[] {
   return src.nodes.map((node) => {
     const entity = src.entities.get(node.entityId)
     const proto = entity?.prototypeId ? src.prototypes.get(entity.prototypeId) : undefined
+    // Cascade (§8.3): palette → prototype → referenced StyleProfile(s) → entity
+    // override → node override. The entity's then the node's profile sit above
+    // the baseline but below the explicit pins, so a profile re-skins what it
+    // covers while a pinned key still wins.
     const style = resolveNodeStyle(
       src.paletteTokens,
       proto?.style,
+      profileStyle(src, entity?.styleProfileId),
+      profileStyle(src, node.styleProfileId),
       entity?.styleOverride,
       node.styleOverride,
     )
@@ -77,9 +94,12 @@ export function toFlowEdges(src: DiagramSource): FlowEdge[] {
   return src.edges.map((edge) => {
     const rel = src.relationships.get(edge.relationshipId)
     const proto = rel?.prototypeId ? src.prototypes.get(rel.prototypeId) : undefined
+    // Cascade (§8.3): palette → relationship prototype → the prototype's default
+    // StyleProfile → relationship override → edge override.
     const style = resolveEdgeStyle(
       src.paletteTokens,
       proto?.style,
+      profileStyle(src, proto?.styleProfileId),
       rel?.styleOverride,
       edge.styleOverride,
     )
@@ -95,6 +115,8 @@ export interface DiagramSnapshot {
   flowEdges: FlowEdge[]
   /** The view's saved pan/zoom (spec §7.2), restored on open; null if unset. */
   viewport: { x: number; y: number; zoom: number } | null
+  /** The view palette's tokens — wrapped in a `PaletteRoot` around the canvas (§8.4). */
+  paletteTokens: PaletteTokens
 }
 
 /** Gather a board's data through the gateway and build the render snapshot. */
@@ -120,6 +142,7 @@ export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<Dia
     entities,
     relationships,
     prototypes: new Map(graph.prototypes.map((p) => [p.id, p])),
+    styleProfiles: new Map(graph.styleProfiles.map((p) => [p.id, p])),
     paletteTokens: palette?.tokens ?? DEFAULT_PALETTE_TOKENS,
   }
 
@@ -128,6 +151,7 @@ export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<Dia
     flowNodes: toFlowNodes(src),
     flowEdges: toFlowEdges(src),
     viewport: view?.viewport ?? null,
+    paletteTokens: src.paletteTokens,
   }
 }
 

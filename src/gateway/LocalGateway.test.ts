@@ -3,7 +3,7 @@ import { createMemoryGateway, type GatewayDeps } from './index'
 import { LocalGateway } from './LocalGateway'
 import { createMemorySqliteFromBytes } from '../db/wasm'
 import { serializeDocument } from '../io'
-import type { NodgeDocument } from '../model/document'
+import { CURRENT_SCHEMA_VERSION, type NodgeDocument } from '../model/document'
 
 /** Deterministic ids/clock so assertions are stable; round-trip works regardless. */
 function deterministicDeps(): GatewayDeps {
@@ -177,7 +177,9 @@ describe('LocalGateway — migrations', () => {
     expect(graph.description).toBe('')
 
     const doc = await gw.exportJson(graph.id)
-    expect(doc.schemaVersion).toBe(1)
+    // The document is stamped at the current format version (the migration chain
+    // upgraded the legacy v0 doc forward), with the now-required collections filled.
+    expect(doc.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(doc.palettes).toEqual([])
     expect(doc.styleProfiles).toEqual([])
   })

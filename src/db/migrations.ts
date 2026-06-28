@@ -23,7 +23,37 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
       for (const stmt of schemaDdl()) await db.exec(stmt)
     },
   },
+  {
+    // v2 (spec §8.3): nodes/entities/prototypes can reference a StyleProfile.
+    // Existing OPFS databases predate the column, so add it nullably — old rows
+    // read back `styleProfileId: null` and keep rendering exactly as before.
+    //
+    // The add is guarded: `schemaDdl()` (run by v1) always reflects the *current*
+    // model, so a brand-new database already has the column at v1. We only ALTER
+    // when it is genuinely absent (a real legacy v1 DB), which keeps the runner
+    // safe for both fresh and migrated databases.
+    version: 2,
+    up: async (db) => {
+      for (const tableName of ['entity', 'node', 'prototype']) {
+        await addColumnIfMissing(db, tableName, 'style_profile_id', 'TEXT')
+      }
+    },
+  },
 ]
+
+/** ALTER TABLE … ADD COLUMN only when the column is not already present. */
+async function addColumnIfMissing(
+  db: AsyncSqlite,
+  tableName: string,
+  columnName: string,
+  columnType: string,
+): Promise<void> {
+  const info = await db.all(`PRAGMA table_info(${tableName})`)
+  const exists = info.some((row) => row.name === columnName)
+  if (!exists) {
+    await db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`)
+  }
+}
 
 export const LATEST_SQLITE_VERSION = SQLITE_MIGRATIONS.reduce(
   (max, m) => Math.max(max, m.version),

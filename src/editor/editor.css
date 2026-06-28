@@ -5,6 +5,8 @@
   inset: 0;
   width: 100vw;
   height: 100dvh;
+  /* The per-view canvas PaletteRoot (§8.4) sets --nodge-surface-canvas. */
+  background: var(--nodge-surface-canvas, transparent);
 }
 
 .toolbar {
@@ -92,10 +94,13 @@
 
 .panel {
   pointer-events: auto;
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14);
+  /* Chrome panels theme from the app-chrome PaletteRoot (§8.4). Falls back to a
+     neutral light surface when no palette is applied (e.g. isolated tests). */
+  background: var(--nodge-surface-raised, rgba(255, 255, 255, 0.97));
+  color: var(--nodge-content-primary, inherit);
+  border: 1px solid var(--nodge-border-subtle, rgba(0, 0, 0, 0.12));
+  border-radius: var(--nodge-radius, 8px);
+  box-shadow: var(--nodge-elevation-low, 0 1px 6px rgba(0, 0, 0, 0.14));
   padding: 10px 12px;
   font-size: 13px;
 }
@@ -293,5 +298,82 @@
     bottom: 0;
     flex-direction: row;
     overflow-x: auto;
+  }
+}
+
+/* ── Phase 4: palette editor / style-profile / link-unlink controls ── */
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.style-label {
+  flex: 1;
+  font-size: 12px;
+}
+
+.pin-toggle {
+  min-height: 28px;
+  min-width: 32px;
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.18));
+  border-radius: 5px;
+  background: var(--nodge-surface-base, #fff);
+  cursor: pointer;
+}
+
+.pin-toggle.pinned {
+  border-color: var(--nodge-border-focus, #4361ee);
+  box-shadow: 0 0 0 1px var(--nodge-border-focus, #4361ee) inset;
+}
+
+.palette-warnings {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--nodge-intent-warning-border, #c98a00);
+  background: color-mix(in srgb, var(--nodge-intent-warning-bg, #f0a500) 18%, transparent);
+  border-radius: 6px;
+}
+
+/* The app-chrome PaletteRoot wraps the whole app: it themes via inherited CSS
+   variables but must not introduce a layout box (the editor is position:fixed). */
+.app-chrome {
+  display: contents;
+}
+
+/* ── Phase 4: engine-level effects applied at the PaletteRoot boundary (§8.2).
+   CSS-only and minimal; animated treatments respect prefers-reduced-motion. ── */
+[data-nodge-effect='glass'] .nodge-node {
+  backdrop-filter: blur(4px);
+  background-blend-mode: overlay;
+}
+
+[data-nodge-effect='pixel'] .nodge-node {
+  image-rendering: pixelated;
+  border-radius: 0 !important;
+}
+
+[data-nodge-effect='sketch'] .nodge-node {
+  filter: url(#nodge-sketch);
+}
+
+[data-nodge-effect='crt'] .nodge-node {
+  text-shadow: 0 0 2px currentColor;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-nodge-effect='crt'] .react-flow__renderer {
+    animation: nodge-crt-flicker 6s steps(60) infinite;
+  }
+}
+
+@keyframes nodge-crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.97;
   }
 }

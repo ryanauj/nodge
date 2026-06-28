@@ -41,6 +41,8 @@ export const entityTable = table('entity', {
   graphId: text(),
   name: text(),
   prototypeId: text().orNull(),
+  /** A referenced StyleProfile (§8.3) whose `style` layers into the cascade. */
+  styleProfileId: text().orNull(),
   styleOverride: styleDelta(),
   links: json(parseExternalLinks),
   metadata: metadata(),
@@ -71,6 +73,8 @@ export const prototypeTable = table('prototype', {
   name: text(),
   shape: text().orNull(),
   defaultLabel: text(),
+  /** A default referenced StyleProfile (§9.1 "default StyleProfile/look"). */
+  styleProfileId: text().orNull(),
   style: styleDelta(),
   metadata: metadata(),
   linkScaffold: json(parseExternalLinks),
@@ -94,6 +98,8 @@ export const nodeTable = table('node', {
   boardId: text(),
   entityId: text(),
   label: text(),
+  /** A referenced StyleProfile (§8.3) whose `style` layers into the cascade. */
+  styleProfileId: text().orNull(),
   styleOverride: styleDelta(),
   createdAt: text(),
   updatedAt: text(),

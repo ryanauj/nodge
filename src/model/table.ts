@@ -68,10 +68,19 @@ export function parseRow<D extends TableDef>(def: D, value: unknown, path: strin
   const record = expectRecord(value, path)
   const out: Record<string, unknown> = {}
   for (const key of def.keys) {
+    const field = fieldOf(def, key)
     if (!(key in record)) {
+      // A missing *nullable* column is tolerated and defaults to null — this is
+      // what keeps older `.nodge.json` documents (authored before a nullable
+      // column existed, e.g. `styleProfileId`) loadable without a migration.
+      // Required fields still fail loudly.
+      if (field.nullable) {
+        out[key] = null
+        continue
+      }
       throw new ValidationError(`missing field "${key}"`, path)
     }
-    out[key] = fieldOf(def, key).parse(record[key], `${path}.${key}`)
+    out[key] = field.parse(record[key], `${path}.${key}`)
   }
   return out as RowOf<D>
 }
