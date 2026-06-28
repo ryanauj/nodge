@@ -1,16 +1,32 @@
 /**
- * Phase 3 core editor: multiple boards + multiple views per board (spec §12).
+ * Phase 3 core editor + Phase 5 touch model: multiple boards/views per board
+ * (spec §12), with the full mobile interaction model layered on top.
  *
  * A React Flow canvas wired to the gateway + command layer. Every gesture goes
  * through the gateway: add a node (entity + placement), connect two nodes
  * (relationship + edge), drag to move (per-view positions, one undoable command
  * per drag end). The active board/view is reflected in the URL via React Router;
  * boards/views/palette switchers drive navigation and `updateView`. Undo/redo,
- * save-to-file and load-from-file hang off the same seam. The chrome stays
- * canvas-first and usable on a mobile baseline; the full touch model is Phase 5.
+ * save-to-file and load-from-file hang off the same seam.
+ *
+ * Phase 5 (§10.2): lightweight **tool modes** (Select / Connect / Add) in a
+ * thumb-reach bottom toolbar configure React Flow per mode so gestures never
+ * fight (pan vs. move vs. draw-an-edge). In Connect mode tap-source→tap-target
+ * makes an edge; in Add mode a tap on empty canvas adds a node there. On narrow
+ * viewports the side panels surface as swipe-to-dismiss **bottom sheets**. Tool
+ * mode + sheet state is client UI state (the Zustand store), not gateway data.
+ * Large-graph performance: visible-only rendering + a memoized transform.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Background,
@@ -25,6 +41,7 @@ import {
   type Connection,
   type FinalConnectionState,
   type NodeChange,
+  type NodeMouseHandler,
 } from '@xyflow/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import '@xyflow/react/dist/style.css'
@@ -59,6 +76,9 @@ import { NodeStylePanel } from './panels/NodeStylePanel'
 import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
+import { BottomSheet } from './panels/BottomSheet'
+import { ToolModeToolbar } from './ToolModeToolbar'
+import { toolModeFlowProps, useToolMode, SHEET_LABELS, type SheetKey } from './toolMode'
 import './editor.css'
 
 /** Build the board/view URL the router reflects the active diagram into. */
@@ -145,6 +165,15 @@ function EditorCanvas() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const selectedNodeIdsRef = useRef<string[]>([])
+
+  // Phase 5 tool mode + transient sheet state (client UI state, §10.2/§11). The
+  // mode drives the React Flow interaction props so gestures never fight.
+  const mode = useToolMode((s) => s.mode)
+  const sheet = useToolMode((s) => s.sheet)
+  const closeSheet = useToolMode((s) => s.closeSheet)
+  const connectSourceId = useToolMode((s) => s.connectSourceId)
+  const setConnectSource = useToolMode((s) => s.setConnectSource)
+  const flowProps = useMemo(() => toolModeFlowProps(mode), [mode])
 
   // Drag-to-create quick-picker (§9.4) state, populated on connect-to-empty.
   const [pickerCtx, setPickerCtx] = useState<{
@@ -240,6 +269,19 @@ function EditorCanvas() {
     onSuccess: invalidateDiagram,
   })
 
+  // Add a node at a specific flow-space point (Add-mode tap on empty canvas).
+  const addNodeAt = useMutation({
+    mutationFn: async ({ x, y }: { x: number; y: number }) => {
+      const gw = await getGateway()
+      const count = nodesRef.current.length
+      return gw.addNode(ids!.boardId, ids!.viewId, { name: `Node ${count + 1}`, x, y })
+    },
+    onSuccess: async () => {
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
   const connect = useMutation({
     mutationFn: async (connection: Connection) => {
       const gw = await getGateway()
@@ -250,7 +292,10 @@ function EditorCanvas() {
         targetHandle: connection.targetHandle ?? null,
       })
     },
-    onSuccess: invalidateDiagram,
+    onSuccess: async () => {
+      await invalidateDiagram()
+      await refreshUndo()
+    },
   })
 
   const onConnect = useCallback(
@@ -281,6 +326,46 @@ function EditorCanvas() {
       })
     },
     [ids, getGateway, screenToFlowPosition],
+  )
+
+  // Connect mode (§10.2): tap a source node, then tap a target node → an edge.
+  // No dragging required, so it works cleanly on touch where a precise handle
+  // drag is awkward. The pending source is transient client UI state.
+  const onNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
+    (_event, node) => {
+      if (mode !== 'connect' || !ids) return
+      if (!connectSourceId) {
+        setConnectSource(node.id)
+        return
+      }
+      if (connectSourceId === node.id) {
+        setConnectSource(null)
+        return
+      }
+      connect.mutate({
+        source: connectSourceId,
+        target: node.id,
+        sourceHandle: null,
+        targetHandle: null,
+      })
+      setConnectSource(null)
+    },
+    [mode, ids, connectSourceId, setConnectSource, connect],
+  )
+
+  // Add mode (§10.2): a tap on empty canvas adds a node at that point. In other
+  // modes a pane tap just clears any pending connect source. React Flow delivers
+  // a React mouse event for pane clicks (a tap maps to a click on touch).
+  const onPaneClick = useCallback(
+    (event: ReactMouseEvent) => {
+      if (mode !== 'add' || !ids || !ready) {
+        if (connectSourceId) setConnectSource(null)
+        return
+      }
+      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      addNodeAt.mutate({ x: flowPos.x, y: flowPos.y })
+    },
+    [mode, ids, ready, connectSourceId, setConnectSource, screenToFlowPosition, addNodeAt],
   )
 
   const connectToExisting = useMutation({
@@ -535,6 +620,94 @@ function EditorCanvas() {
     ? edges.find((e) => e.id === selectedEdgeId)?.style ?? null
     : null
 
+  // Group the panels by sheet key (spec §10.1): each group renders once and is
+  // placed either in the desktop side column or its mobile bottom sheet. The
+  // `properties`/`crossref` groups are only present when something is selected,
+  // which drives whether their bottom-sheet tab is enabled.
+  const sheetGroups: Record<SheetKey, ReactNode> = ids
+    ? {
+        palette: (
+          <>
+            <BoardViewBar
+              graphId={ids.graphId}
+              boardId={ids.boardId}
+              viewId={ids.viewId}
+              onNavigate={(b, v) => void navigateTo(b, v)}
+              onChanged={() => {
+                void queryClient.invalidateQueries({ queryKey: ['graph', ids.graphId] })
+                void queryClient.invalidateQueries({ queryKey: ['board', ids.boardId] })
+              }}
+            />
+            <PaletteSwitcher
+              graphId={ids.graphId}
+              viewId={ids.viewId}
+              currentPaletteId={ids.paletteId}
+              onChanged={() => {
+                void queryClient.invalidateQueries({ queryKey: ['resolved'] })
+                void invalidateDiagram()
+              }}
+            />
+            <PaletteEditor
+              graphId={ids.graphId}
+              onAssignToView={(paletteId) => void assignViewPalette(paletteId)}
+              onAssignToChrome={(paletteId) => applyChromePalette(paletteId)}
+              onChanged={() => {
+                void queryClient.invalidateQueries({ queryKey: ['palettes', ids.graphId] })
+                void queryClient.invalidateQueries({ queryKey: ['resolved'] })
+                void queryClient.invalidateQueries({ queryKey: ['chrome-palette'] })
+                void invalidateDiagram()
+              }}
+            />
+            <StyleProfilePanel graphId={ids.graphId} />
+          </>
+        ),
+        properties:
+          (selectedNodeId && selectedNodeStyle) || (selectedEdgeId && selectedEdgeStyle) ? (
+            <>
+              {selectedNodeId && selectedNodeStyle && (
+                <NodeStylePanel
+                  key={selectedNodeId}
+                  nodeId={selectedNodeId}
+                  resolved={selectedNodeStyle}
+                  graphId={ids.graphId}
+                  onChanged={() => void invalidateDiagram()}
+                />
+              )}
+              {selectedEdgeId && selectedEdgeStyle && (
+                <EdgeStylePanel
+                  key={selectedEdgeId}
+                  edgeId={selectedEdgeId}
+                  resolved={selectedEdgeStyle}
+                  onChanged={() => void invalidateDiagram()}
+                />
+              )}
+            </>
+          ) : null,
+        prototypes: (
+          <PrototypePanel
+            graphId={ids.graphId}
+            selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
+            onStampPrototype={(p) => stampPrototype.mutate(p)}
+            onChanged={() => void invalidateDiagram()}
+          />
+        ),
+        crossref: selectedEntityId ? (
+          <EntityPanel
+            key={selectedEntityId}
+            entityId={selectedEntityId}
+            onChanged={() => void invalidateDiagram()}
+            onNavigate={(kind, target) => void drillTo(kind, target)}
+          />
+        ) : null,
+      }
+    : { palette: null, properties: null, prototypes: null, crossref: null }
+
+  // Which sheet tabs are populated (drives the toolbar's enabled tabs).
+  const availableSheets = new Set<SheetKey>(
+    (Object.keys(sheetGroups) as SheetKey[]).filter((k) => sheetGroups[k] != null),
+  )
+
   return (
     <PaletteRoot
       tokens={canvasTokens}
@@ -550,10 +723,24 @@ function EditorCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         onSelectionChange={onSelectionChange}
         onMoveEnd={onMoveEnd}
         fitView
         proOptions={{ hideAttribution: true }}
+        // Phase 5 (§10.2): tool-mode-driven interaction props so pan vs. move vs.
+        // connect never fight. The mapping is the pure `toolModeFlowProps`.
+        panOnDrag={flowProps.panOnDrag}
+        selectionOnDrag={flowProps.selectionOnDrag}
+        nodesDraggable={flowProps.nodesDraggable}
+        nodesConnectable={flowProps.nodesConnectable}
+        elementsSelectable={flowProps.elementsSelectable}
+        zoomOnPinch={flowProps.zoomOnPinch}
+        panOnScroll={flowProps.panOnScroll}
+        // Large-graph performance (§12 Phase 5): only mount nodes/edges inside the
+        // viewport so a big board stays interactive; DB work stays in the worker.
+        onlyRenderVisibleElements
       >
         <Background />
         <Controls />
@@ -596,74 +783,23 @@ function EditorCanvas() {
         )}
       </ReactFlow>
 
-      {/* Side panels: boards/views + palette switchers, prototype library,
-          entity properties / cross-reference + drill-down. */}
+      {/* Side panels (desktop) — the CSS hides this column on narrow viewports,
+          where the same panels surface through the bottom sheets below. */}
       {ids && (
         <aside className="side-panels" aria-label="Editor panels">
-          <BoardViewBar
-            graphId={ids.graphId}
-            boardId={ids.boardId}
-            viewId={ids.viewId}
-            onNavigate={(b, v) => void navigateTo(b, v)}
-            onChanged={() => {
-              void queryClient.invalidateQueries({ queryKey: ['graph', ids.graphId] })
-              void queryClient.invalidateQueries({ queryKey: ['board', ids.boardId] })
-            }}
-          />
-          <PaletteSwitcher
-            graphId={ids.graphId}
-            viewId={ids.viewId}
-            currentPaletteId={ids.paletteId}
-            onChanged={() => {
-              void queryClient.invalidateQueries({ queryKey: ['resolved'] })
-              void invalidateDiagram()
-            }}
-          />
-          <PaletteEditor
-            graphId={ids.graphId}
-            onAssignToView={(paletteId) => void assignViewPalette(paletteId)}
-            onAssignToChrome={(paletteId) => applyChromePalette(paletteId)}
-            onChanged={() => {
-              void queryClient.invalidateQueries({ queryKey: ['palettes', ids.graphId] })
-              void queryClient.invalidateQueries({ queryKey: ['resolved'] })
-              void queryClient.invalidateQueries({ queryKey: ['chrome-palette'] })
-              void invalidateDiagram()
-            }}
-          />
-          <StyleProfilePanel graphId={ids.graphId} />
-          {selectedNodeId && selectedNodeStyle && (
-            <NodeStylePanel
-              key={selectedNodeId}
-              nodeId={selectedNodeId}
-              resolved={selectedNodeStyle}
-              graphId={ids.graphId}
-              onChanged={() => void invalidateDiagram()}
-            />
-          )}
-          {selectedEdgeId && selectedEdgeStyle && (
-            <EdgeStylePanel
-              key={selectedEdgeId}
-              edgeId={selectedEdgeId}
-              resolved={selectedEdgeStyle}
-              onChanged={() => void invalidateDiagram()}
-            />
-          )}
-          <PrototypePanel
-            graphId={ids.graphId}
-            selectedNodeId={selectedNodeId}
-            selectedEdgeId={selectedEdgeId}
-            onStampPrototype={(p) => stampPrototype.mutate(p)}
-            onChanged={() => void invalidateDiagram()}
-          />
-          {selectedEntityId && (
-            <EntityPanel
-              key={selectedEntityId}
-              entityId={selectedEntityId}
-              onChanged={() => void invalidateDiagram()}
-              onNavigate={(kind, target) => void drillTo(kind, target)}
-            />
-          )}
+          {sheetGroups.palette}
+          {sheetGroups.properties}
+          {sheetGroups.prototypes}
+          {sheetGroups.crossref}
         </aside>
+      )}
+
+      {/* Bottom sheets (mobile) — the CSS hides these on desktop. Open/close is
+          client UI state in the tool-mode store; swipe or Esc dismisses (§10.1). */}
+      {ids && sheet && availableSheets.has(sheet) && (
+        <BottomSheet title={SHEET_LABELS[sheet]} open onClose={closeSheet}>
+          {sheetGroups[sheet]}
+        </BottomSheet>
       )}
 
       {/* Drag-to-create quick-picker (§9.4). */}
@@ -677,7 +813,8 @@ function EditorCanvas() {
         />
       )}
 
-      {/* Thumb-reach add control for narrow viewports (mobile baseline). */}
+      {/* Thumb-reach add control for narrow viewports (mobile baseline). The FAB
+          stamps a node; in Add mode tapping the canvas also adds at a point. */}
       <button
         className="fab"
         aria-label="Add node"
@@ -686,6 +823,10 @@ function EditorCanvas() {
       >
         +
       </button>
+
+      {/* Phase 5 thumb-reach tool toolbar (Select / Connect / Add) + sheet tabs.
+          Mobile-only via CSS; tool/sheet state lives in the Zustand store. */}
+      {ids && <ToolModeToolbar availableSheets={[...availableSheets]} />}
     </PaletteRoot>
   )
 }

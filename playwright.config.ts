@@ -36,6 +36,19 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         launchOptions: CHROMIUM ? { executablePath: CHROMIUM } : {},
       },
+      // The desktop smoke + Phase 2-4 specs; the mobile spec is mobile-only.
+      testIgnore: /mobile\.spec\.ts/,
+    },
+    {
+      // Phase 5 mobile project (spec §12 acceptance): a phone viewport with
+      // touch enabled, mirroring the chromium project's browser resolution. Only
+      // the mobile smoke runs here (the touch interaction model).
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 5'],
+        launchOptions: CHROMIUM ? { executablePath: CHROMIUM } : {},
+      },
+      testMatch: /mobile\.spec\.ts/,
     },
   ],
   webServer: {
