@@ -144,6 +144,48 @@ export interface NodePositionInput {
   y: number
 }
 
+/**
+ * Add a node to a board: create the base {@link Entity} and its {@link Node}
+ * placement plus the per-view position, as a single undoable command (spec §12
+ * Phase 1 — "creating on the canvas creates the right base + visual rows").
+ */
+export interface AddNodeInput {
+  name: string
+  x: number
+  y: number
+  prototypeId?: Uuid | null
+  /** Pinned overrides on the placement (Node.styleOverride). */
+  styleOverride?: StyleDelta
+  /** Pinned overrides on the base thing (Entity.styleOverride). */
+  entityStyleOverride?: StyleDelta
+}
+
+export interface AddNodeResult {
+  entity: Entity
+  node: Node
+  position: NodePositionInput
+}
+
+/**
+ * Connect two existing nodes: create the base {@link Relationship} between the
+ * entities they place and its {@link Edge} placement, as a single undoable
+ * command. Entity ids are resolved from the node placements.
+ */
+export interface ConnectNodesInput {
+  sourceNodeId: Uuid
+  targetNodeId: Uuid
+  directed?: boolean
+  label?: string
+  prototypeId?: Uuid | null
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
+export interface ConnectNodesResult {
+  relationship: Relationship
+  edge: Edge
+}
+
 export interface PaletteInput {
   name: string
   tokens?: PaletteTokens
@@ -182,6 +224,10 @@ export interface DataGateway {
   deleteEdge(id: Uuid): Promise<void>
   createView(boardId: Uuid, input: ViewInput): Promise<View>
   bulkUpsertPositions(viewId: Uuid, positions: NodePositionInput[]): Promise<NodePositionInput[]>
+
+  // Composite canvas gestures (single undoable command each)
+  addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult>
+  connectNodes(boardId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult>
 
   // Prototypes / Palettes / StyleProfiles
   listPrototypes(graphId: Uuid): Promise<Prototype[]>
