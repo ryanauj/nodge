@@ -95,6 +95,8 @@ export interface DiagramSnapshot {
   flowEdges: FlowEdge[]
   /** The view's saved pan/zoom (spec §7.2), restored on open; null if unset. */
   viewport: { x: number; y: number; zoom: number } | null
+  /** The view palette's tokens — wrapped in a `PaletteRoot` around the canvas (§8.4). */
+  paletteTokens: PaletteTokens
 }
 
 /** Gather a board's data through the gateway and build the render snapshot. */
@@ -128,6 +130,7 @@ export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<Dia
     flowNodes: toFlowNodes(src),
     flowEdges: toFlowEdges(src),
     viewport: view?.viewport ?? null,
+    paletteTokens: src.paletteTokens,
   }
 }
 

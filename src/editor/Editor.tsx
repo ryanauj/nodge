@@ -47,9 +47,15 @@ import {
   pickTextFile,
 } from './fileIo'
 import { NodgeNode } from './NodgeNode'
+import { PaletteRoot } from './PaletteRoot'
+import { DEFAULT_PALETTE_TOKENS } from './style'
+import { setChromePaletteId } from './appSettings'
 import { BoardViewBar } from './panels/BoardViewBar'
 import { EntityPanel } from './panels/EntityPanel'
 import { PaletteSwitcher } from './panels/PaletteSwitcher'
+import { PaletteEditor } from './panels/PaletteEditor'
+import { StyleProfilePanel } from './panels/StyleProfilePanel'
+import { NodeStylePanel } from './panels/NodeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
 import './editor.css'
@@ -194,6 +200,30 @@ function EditorCanvas() {
 
   const invalidateDiagram = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['diagram'] }),
+    [queryClient],
+  )
+
+  // Assign a palette to the active view (spec §8.4) — the canvas PaletteRoot
+  // boundary. Same path as the switcher, re-skinning everything not pinned.
+  const assignViewPalette = useCallback(
+    async (paletteId: string) => {
+      if (!ids) return
+      const gw = await getGateway()
+      await gw.updateView(ids.viewId, { paletteId })
+      await queryClient.invalidateQueries({ queryKey: ['resolved'] })
+      await invalidateDiagram()
+    },
+    [ids, getGateway, queryClient, invalidateDiagram],
+  )
+
+  // Apply a palette as the app-chrome theme (spec §8.4) — the second PaletteRoot
+  // boundary. Persists the pointer (localStorage, mirroring activeGraphId) and
+  // re-resolves the top-level chrome palette so toolbars/panels re-theme.
+  const applyChromePalette = useCallback(
+    (paletteId: string) => {
+      setChromePaletteId(paletteId)
+      void queryClient.invalidateQueries({ queryKey: ['chrome-palette'] })
+    },
     [queryClient],
   )
 
@@ -493,8 +523,20 @@ function EditorCanvas() {
   // the "settling" indicator reflects background refetches after edits too.
   const busy = !ready || diagram.isFetching
 
+  // The view palette's tokens wrap the canvas in a PaletteRoot (§8.4 boundary).
+  const canvasTokens = diagram.data?.paletteTokens ?? DEFAULT_PALETTE_TOKENS
+  // The resolved style of the selected node (for the link/unlink property panel).
+  const selectedNodeStyle = selectedNodeId
+    ? nodes.find((n) => n.id === selectedNodeId)?.data.style ?? null
+    : null
+
   return (
-    <div className="editor" data-testid="editor">
+    <PaletteRoot
+      tokens={canvasTokens}
+      className="editor"
+      testId="canvas-palette-root"
+      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh' }}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -572,6 +614,26 @@ function EditorCanvas() {
               void invalidateDiagram()
             }}
           />
+          <PaletteEditor
+            graphId={ids.graphId}
+            onAssignToView={(paletteId) => void assignViewPalette(paletteId)}
+            onAssignToChrome={(paletteId) => applyChromePalette(paletteId)}
+            onChanged={() => {
+              void queryClient.invalidateQueries({ queryKey: ['palettes', ids.graphId] })
+              void queryClient.invalidateQueries({ queryKey: ['resolved'] })
+              void queryClient.invalidateQueries({ queryKey: ['chrome-palette'] })
+              void invalidateDiagram()
+            }}
+          />
+          <StyleProfilePanel graphId={ids.graphId} />
+          {selectedNodeId && selectedNodeStyle && (
+            <NodeStylePanel
+              key={selectedNodeId}
+              nodeId={selectedNodeId}
+              resolved={selectedNodeStyle}
+              onChanged={() => void invalidateDiagram()}
+            />
+          )}
           <PrototypePanel
             graphId={ids.graphId}
             selectedNodeId={selectedNodeId}
@@ -610,7 +672,7 @@ function EditorCanvas() {
       >
         +
       </button>
-    </div>
+    </PaletteRoot>
   )
 }
 
