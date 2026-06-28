@@ -93,6 +93,8 @@ export interface DiagramSnapshot {
   ids: DiagramIds
   flowNodes: FlowNode[]
   flowEdges: FlowEdge[]
+  /** The view's saved pan/zoom (spec §7.2), restored on open; null if unset. */
+  viewport: { x: number; y: number; zoom: number } | null
 }
 
 /** Gather a board's data through the gateway and build the render snapshot. */
@@ -121,7 +123,12 @@ export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<Dia
     paletteTokens: palette?.tokens ?? DEFAULT_PALETTE_TOKENS,
   }
 
-  return { ids, flowNodes: toFlowNodes(src), flowEdges: toFlowEdges(src) }
+  return {
+    ids,
+    flowNodes: toFlowNodes(src),
+    flowEdges: toFlowEdges(src),
+    viewport: view?.viewport ?? null,
+  }
 }
 
 function positionMap(board: BoardDetail, viewId: Uuid): Map<Uuid, { x: number; y: number }> {

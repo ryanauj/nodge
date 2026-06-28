@@ -175,6 +175,13 @@
   gap: 6px;
 }
 
+/* The active board/view in the switcher (spec §7, Phase 3). */
+.switch-active {
+  font-weight: 600;
+  outline: 2px solid #4361ee;
+  outline-offset: 1px;
+}
+
 .proto-kind {
   color: #888;
   font-size: 11px;

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, it, expect } from 'vitest'
 import App from './App'
 import { GatewayProvider } from './app/GatewayContext'
@@ -12,7 +13,12 @@ async function renderApp() {
   render(
     <QueryClientProvider client={queryClient}>
       <GatewayProvider value={() => Promise.resolve(gw)}>
-        <App />
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<App />} />
+            <Route path="/board/:boardId/view/:viewId" element={<App />} />
+          </Routes>
+        </MemoryRouter>
       </GatewayProvider>
     </QueryClientProvider>,
   )

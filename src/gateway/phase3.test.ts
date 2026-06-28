@@ -171,7 +171,7 @@ describe('Phase 3 — per-view palette selection re-skins the view (§8.3, §8.4
 describe('Phase 3 — per-view viewport + positions persist (§7.2)', () => {
   it('updateView persists viewport; positions are per view', async () => {
     const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
+    const { boardId, viewId } = await newGraph(gw)
     const view2 = await gw.createView(boardId, { name: 'View 2' })
     const n = await gw.addNode(boardId, viewId, { name: 'N', x: 10, y: 20 })
     // The same node sits differently in view 2 (per-view positions).

@@ -14,7 +14,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <GatewayProvider>
         <BrowserRouter basename={import.meta.env.BASE_URL}>
           <Routes>
+            {/* The active diagram is reflected in the URL (spec §11 — React Router
+                for graph/board/view). `/` bootstraps/opens the active graph and
+                redirects to its board/view; deep links open a specific one. */}
             <Route path="/" element={<App />} />
+            <Route path="/board/:boardId/view/:viewId" element={<App />} />
           </Routes>
         </BrowserRouter>
       </GatewayProvider>

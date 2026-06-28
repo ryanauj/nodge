@@ -17,6 +17,12 @@ export interface EntityPanelProps {
   entityId: Uuid
   /** Called after a successful edit so the canvas re-renders. */
   onChanged: () => void
+  /**
+   * Drill-down navigation for typed links (spec §5.4, §7.4): a `diagram` link
+   * (target = board id) or an `entity` link (target = entity id). Wired through
+   * React Router by the parent so drill-down is real navigation, not state.
+   */
+  onNavigate?: (kind: 'diagram' | 'entity', target: string) => void
 }
 
 function newLinkId(): string {
@@ -26,7 +32,7 @@ function newLinkId(): string {
     : `link-${Math.random().toString(36).slice(2)}`
 }
 
-export function EntityPanel({ entityId, onChanged }: EntityPanelProps) {
+export function EntityPanel({ entityId, onChanged, onNavigate }: EntityPanelProps) {
   const getGateway = useGateway()
 
   const entity = useQuery({
@@ -156,6 +162,14 @@ export function EntityPanel({ entityId, onChanged }: EntityPanelProps) {
               value={link.label}
               onChange={(e) => updateLink(link.id, { label: e.target.value })}
             />
+            {(link.kind === 'diagram' || link.kind === 'entity') && onNavigate && link.target && (
+              <button
+                aria-label={`Go to ${link.label || link.target}`}
+                onClick={() => onNavigate(link.kind as 'diagram' | 'entity', link.target)}
+              >
+                Go to
+              </button>
+            )}
             <button aria-label="Remove link" onClick={() => removeLink(link.id)}>
               ✕
             </button>
