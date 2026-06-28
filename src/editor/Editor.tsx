@@ -34,10 +34,13 @@ import {
   importGraphText,
   pickTextFile,
 } from './fileIo'
-import { nodeTypes } from './NodgeNode'
+import { NodgeNode } from './NodgeNode'
 import './editor.css'
 
 const POSITION_FLUSH_MS = 250
+
+/** Stable node-type registry (defining this inline would remount every render). */
+const nodeTypes = { nodge: NodgeNode }
 
 function EditorCanvas() {
   const getGateway = useGateway()

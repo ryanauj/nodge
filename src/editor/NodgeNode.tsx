@@ -30,5 +30,3 @@ export function NodgeNode({ data }: NodeProps) {
     </div>
   )
 }
-
-export const nodeTypes = { nodge: NodgeNode }

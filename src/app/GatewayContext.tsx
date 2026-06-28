@@ -24,6 +24,7 @@ export function GatewayProvider({
   return <GatewayContext.Provider value={value}>{children}</GatewayContext.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- context hook colocated with its provider
 export function useGateway(): GatewayGetter {
   return useContext(GatewayContext)
 }
