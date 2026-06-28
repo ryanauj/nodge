@@ -12,10 +12,12 @@
 
 import { boolean, enumText, integer, json, real, text } from './fields'
 import {
+  OPLOG_OPS,
   PROTOTYPE_KINDS,
   STYLE_PROFILE_TARGETS,
   parseExternalLinks,
   parseMetadata,
+  parseOplogSnapshot,
   parsePaletteTokens,
   parseStyleDelta,
   parseViewFilter,
@@ -166,6 +168,39 @@ export const styleProfileTable = table('style_profile', {
   version: integer(),
 })
 
+/**
+ * The append-only oplog (spec §6.2 "Optional, Phase 6", §6.3, §6.6).
+ *
+ * Every domain mutation is journalled here as one entry at the {@link Mutator}
+ * write seam — `op` is `upsert` (a created/updated row) or `delete` (a tombstone).
+ * The entry carries the row's `version` + `updatedAt`, which is exactly what the
+ * sync layer reconciles by (LWW). `seq` is the monotonic local cursor a puller
+ * checkpoints against; `snapshot` is the full row JSON for an upsert (so a pull
+ * can apply it) and `null` for a delete.
+ *
+ * It is intentionally OUTSIDE {@link ALL_TABLES}: the oplog is local journal /
+ * sync plumbing, never part of the portable `NodgeDocument` (so the file format
+ * and its `schemaVersion` are unchanged). A dedicated SQLite migration creates it.
+ */
+export const oplogTable = table(
+  'oplog',
+  {
+    seq: integer(),
+    /** The domain table this entry mutated (e.g. `entity`, `node`). */
+    tableName: text(),
+    /** The mutated row's primary-key value (its client UUID). */
+    rowId: text(),
+    op: enumText(OPLOG_OPS),
+    /** The mutated row's `version` (LWW primary key). */
+    version: integer(),
+    /** The mutated row's `updatedAt` ISO timestamp (LWW tiebreaker). */
+    updatedAt: text(),
+    /** Full row JSON for `upsert`; `null` for a `delete` tombstone. */
+    snapshot: json(parseOplogSnapshot).orNull(),
+  },
+  { primaryKey: ['seq'] },
+)
+
 /** Every table, in dependency order (creation order is FK-safe). */
 export const ALL_TABLES: readonly TableDef[] = [
   graphTable,
@@ -193,3 +228,4 @@ export type View = RowOf<typeof viewTable>
 export type NodePosition = RowOf<typeof nodePositionTable>
 export type Palette = RowOf<typeof paletteTable>
 export type StyleProfile = RowOf<typeof styleProfileTable>
+export type OplogEntry = RowOf<typeof oplogTable>

@@ -147,3 +147,18 @@ export type PrototypeKind = (typeof PROTOTYPE_KINDS)[number]
 
 export const STYLE_PROFILE_TARGETS = ['node', 'edge'] as const
 export type StyleProfileTarget = (typeof STYLE_PROFILE_TARGETS)[number]
+
+/** Oplog operation kinds (spec §6.3 / §6.6). */
+export const OPLOG_OPS = ['upsert', 'delete'] as const
+export type OplogOp = (typeof OPLOG_OPS)[number]
+
+/**
+ * The `snapshot` JSON column of an oplog entry: the full mutated row for an
+ * `upsert`, or `null` for a `delete` tombstone. Stored as an open record so any
+ * domain row shape round-trips losslessly through the journal.
+ */
+export type OplogSnapshot = Record<string, unknown>
+
+export function parseOplogSnapshot(value: unknown, path: string): OplogSnapshot {
+  return expectRecord(value, path)
+}
