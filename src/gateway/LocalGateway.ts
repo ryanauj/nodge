@@ -69,6 +69,7 @@ import type {
   NodePatch,
   NodePositionInput,
   PaletteInput,
+  PalettePatch,
   PasteClipboardInput,
   PasteClipboardResult,
   PlaceEntityInput,
@@ -80,6 +81,7 @@ import type {
   RelationshipInput,
   RelationshipPatch,
   StyleProfileInput,
+  StyleProfilePatch,
   Uuid,
   ViewDetail,
   ViewInput,
@@ -943,6 +945,39 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(command('createPalette', (m) => m.insert(paletteTable, palette)))
   }
 
+  /**
+   * Edit a palette's name/tokens (spec §8.4 token-level authoring). One undoable
+   * command. Editing a built-in's tokens clears the `builtin` flag so the user's
+   * edits read as a user palette (the seeded library stays pristine until forked).
+   */
+  async updatePalette(id: Uuid, patch: PalettePatch): Promise<Palette> {
+    const current = await this.require(await this.repo.getById(paletteTable, id), 'palette', id)
+    const next: Palette = { ...current }
+    if (patch.name !== undefined) next.name = patch.name
+    if (patch.tokens !== undefined) next.tokens = patch.tokens
+    if (patch.builtin !== undefined) next.builtin = patch.builtin
+    else if (patch.tokens !== undefined) next.builtin = false
+    const updated = this.bumpVersion(next)
+    return this.commands.execute(command('updatePalette', (m) => m.put(paletteTable, updated)))
+  }
+
+  async deletePalette(id: Uuid): Promise<void> {
+    await this.commands.execute(command('deletePalette', (m) => m.remove(paletteTable, { id })))
+  }
+
+  /** Fork a palette into a new editable (non-builtin) row (spec §8.4). */
+  async duplicatePalette(id: Uuid, name?: string): Promise<Palette> {
+    const source = await this.require(await this.repo.getById(paletteTable, id), 'palette', id)
+    const palette: Palette = {
+      ...this.stampNew(),
+      graphId: source.graphId,
+      name: name ?? `${source.name} copy`,
+      tokens: { ...source.tokens },
+      builtin: false,
+    }
+    return this.commands.execute(command('duplicatePalette', (m) => m.insert(paletteTable, palette)))
+  }
+
   async listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]> {
     return this.repo.list(styleProfileTable, { graphId })
   }
@@ -957,6 +992,24 @@ export class LocalGateway implements DataGateway {
     }
     return this.commands.execute(
       command('createStyleProfile', (m) => m.insert(styleProfileTable, styleProfile)),
+    )
+  }
+
+  async updateStyleProfile(id: Uuid, patch: StyleProfilePatch): Promise<StyleProfile> {
+    const current = await this.require(
+      await this.repo.getById(styleProfileTable, id),
+      'styleProfile',
+      id,
+    )
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(
+      command('updateStyleProfile', (m) => m.put(styleProfileTable, updated)),
+    )
+  }
+
+  async deleteStyleProfile(id: Uuid): Promise<void> {
+    await this.commands.execute(
+      command('deleteStyleProfile', (m) => m.remove(styleProfileTable, { id })),
     )
   }
 

@@ -400,9 +400,26 @@ export interface PaletteInput {
   builtin?: boolean
 }
 
+/**
+ * Patch a palette (spec §8.4 — token-level authoring). Rename it or replace its
+ * `tokens`; `builtin` can be cleared when a user forks/edits a seeded palette.
+ * Applied as one undoable command.
+ */
+export interface PalettePatch {
+  name?: string
+  tokens?: PaletteTokens
+  builtin?: boolean
+}
+
 export interface StyleProfileInput {
   name: string
   target: StyleProfileTarget
+  style?: StyleDelta
+}
+
+/** Patch a named style bundle (spec §8.3): rename it or replace its `style`. */
+export interface StyleProfilePatch {
+  name?: string
   style?: StyleDelta
 }
 
@@ -480,8 +497,18 @@ export interface DataGateway {
   refreshFromPrototype(input: RefreshFromPrototypeInput): Promise<RefreshFromPrototypeResult>
   listPalettes(graphId: Uuid): Promise<Palette[]>
   createPalette(graphId: Uuid, input: PaletteInput): Promise<Palette>
+  /** Edit a palette's name/tokens (§8.4 token-level authoring), one command. */
+  updatePalette(id: Uuid, patch: PalettePatch): Promise<Palette>
+  /** Delete a palette, one command. */
+  deletePalette(id: Uuid): Promise<void>
+  /** Fork a palette into a new editable row (§8.4 "duplicate a palette"). */
+  duplicatePalette(id: Uuid, name?: string): Promise<Palette>
   listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]>
   createStyleProfile(graphId: Uuid, input: StyleProfileInput): Promise<StyleProfile>
+  /** Edit a style profile's name/style (§8.3), one command. */
+  updateStyleProfile(id: Uuid, patch: StyleProfilePatch): Promise<StyleProfile>
+  /** Delete a style profile, one command. */
+  deleteStyleProfile(id: Uuid): Promise<void>
 
   // Undo / redo (command layer; an HttpGateway would back these with the oplog)
   undo(): Promise<boolean>
