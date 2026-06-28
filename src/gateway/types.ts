@@ -237,6 +237,12 @@ export interface DataGateway {
   listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]>
   createStyleProfile(graphId: Uuid, input: StyleProfileInput): Promise<StyleProfile>
 
+  // Undo / redo (command layer; an HttpGateway would back these with the oplog)
+  undo(): Promise<boolean>
+  redo(): Promise<boolean>
+  canUndo(): boolean
+  canRedo(): boolean
+
   // Project I/O
   exportJson(graphId: Uuid): Promise<NodgeDocument>
   exportSqlite(): Promise<Uint8Array>

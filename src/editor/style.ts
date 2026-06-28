@@ -64,15 +64,16 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-function pick<T extends Record<string, unknown>>(
+function pick<T>(
   target: T,
   source: Record<string, unknown> | undefined,
   keys: readonly (keyof T)[],
 ): void {
   if (!source) return
+  const sink = target as Record<string, unknown>
   for (const key of keys) {
     const value = source[key as string]
-    if (value !== undefined) target[key] = value as T[keyof T]
+    if (value !== undefined) sink[key as string] = value
   }
 }
 

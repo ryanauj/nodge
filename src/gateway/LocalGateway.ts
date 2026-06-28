@@ -445,6 +445,23 @@ export class LocalGateway implements DataGateway {
     )
   }
 
+  // ── Undo / redo ───────────────────────────────────────────────────────────
+  undo(): Promise<boolean> {
+    return this.commands.undo()
+  }
+
+  redo(): Promise<boolean> {
+    return this.commands.redo()
+  }
+
+  canUndo(): boolean {
+    return this.commands.canUndo
+  }
+
+  canRedo(): boolean {
+    return this.commands.canRedo
+  }
+
   // ── Project I/O ──────────────────────────────────────────────────────────
   async exportJson(graphId: Uuid): Promise<NodgeDocument> {
     const graph = await this.require(await this.repo.getById(graphTable, graphId), 'graph', graphId)
