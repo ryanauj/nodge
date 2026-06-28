@@ -12,6 +12,7 @@
 import type { Repository } from '../db/repository'
 import type { RowOf, TableDef } from '../model/table'
 import type { SqlValue } from '../db/sqlite'
+import type { OplogSink } from './oplog'
 
 /** A single reversible row change. */
 interface ReversibleOp {
@@ -46,12 +47,27 @@ function keyOf<D extends TableDef>(def: D, row: RowOf<D>): Record<string, SqlVal
   return key
 }
 
+/**
+ * Side-channel a command's run can tap to journal its writes (Phase 6). Kept
+ * optional + additive so existing call sites and the undo machinery are
+ * untouched: when present, the {@link RecordingMutator} mirrors every write into
+ * the oplog after it lands. `now()` timestamps delete tombstones.
+ */
+export interface CommandBusOptions {
+  oplog?: OplogSink
+  now?: () => string
+}
+
 class RecordingMutator implements Mutator {
   readonly ops: ReversibleOp[] = []
-  constructor(private readonly repo: Repository) {}
+  constructor(
+    private readonly repo: Repository,
+    private readonly opts: CommandBusOptions,
+  ) {}
 
   async insert<D extends TableDef>(def: D, row: RowOf<D>): Promise<RowOf<D>> {
     await this.repo.insert(def, row)
+    await this.opts.oplog?.recordUpsert(def, row)
     const key = keyOf(def, row)
     this.ops.push({
       undo: () => this.repo.deleteByKey(def, key),
@@ -64,6 +80,7 @@ class RecordingMutator implements Mutator {
     const key = keyOf(def, row)
     const before = await this.repo.getByKey(def, key)
     await this.repo.upsert(def, row)
+    await this.opts.oplog?.recordUpsert(def, row)
     this.ops.push({
       undo: () =>
         before
@@ -78,6 +95,7 @@ class RecordingMutator implements Mutator {
     const before = await this.repo.getByKey(def, key)
     await this.repo.deleteByKey(def, key)
     if (before) {
+      await this.opts.oplog?.recordRemove(def, before, this.opts.now?.() ?? new Date().toISOString())
       this.ops.push({
         undo: () => this.repo.upsert(def, before).then(() => undefined),
         redo: () => this.repo.deleteByKey(def, key),
@@ -90,10 +108,13 @@ export class CommandBus {
   private readonly undoStack: ReversibleOp[][] = []
   private readonly redoStack: ReversibleOp[][] = []
 
-  constructor(private readonly repo: Repository) {}
+  constructor(
+    private readonly repo: Repository,
+    private readonly opts: CommandBusOptions = {},
+  ) {}
 
   async execute<T>(cmd: Command<T>): Promise<T> {
-    const mutator = new RecordingMutator(this.repo)
+    const mutator = new RecordingMutator(this.repo, this.opts)
     const result = await cmd.run(mutator)
     if (mutator.ops.length > 0) {
       this.undoStack.push(mutator.ops)
