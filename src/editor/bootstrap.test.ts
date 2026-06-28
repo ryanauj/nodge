@@ -70,4 +70,13 @@ describe('createDefaultDiagram', () => {
     const board = await gw.getBoard(ids.boardId)
     expect(board.views[0].paletteId).toBe(ids.paletteId)
   })
+
+  it('seeds built-in node and relationship prototypes (§9.1)', async () => {
+    const gw = await createMemoryGateway()
+    const ids = await createDefaultDiagram(gw)
+    const protos = await gw.listPrototypes(ids.graphId)
+    expect(protos.some((p) => p.kind === 'node')).toBe(true)
+    expect(protos.some((p) => p.kind === 'relationship')).toBe(true)
+    expect(protos.some((p) => p.name === 'Service')).toBe(true)
+  })
 })
