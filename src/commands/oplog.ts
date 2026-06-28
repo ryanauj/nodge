@@ -63,7 +63,7 @@ export class OplogSink {
       op: 'upsert',
       version: r.version,
       updatedAt: r.updatedAt,
-      snapshot: { ...(row as Record<string, unknown>) },
+      snapshot: { ...(row as unknown as Record<string, unknown>) },
     })
   }
 
