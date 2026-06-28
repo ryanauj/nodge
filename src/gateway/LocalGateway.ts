@@ -45,6 +45,7 @@ import type {
   AddNodeResult,
   BoardDetail,
   BoardInput,
+  BoardPatch,
   ConnectNodesInput,
   ConnectNodesResult,
   ConnectToEntityResult,
@@ -70,6 +71,8 @@ import type {
   PaletteInput,
   PasteClipboardInput,
   PasteClipboardResult,
+  PlaceEntityInput,
+  PlaceEntityResult,
   PrototypeInput,
   PrototypePatch,
   RefreshFromPrototypeInput,
@@ -80,6 +83,7 @@ import type {
   Uuid,
   ViewDetail,
   ViewInput,
+  ViewPatch,
 } from './types'
 
 export interface GatewayDeps {
@@ -267,6 +271,38 @@ export class LocalGateway implements DataGateway {
     }
   }
 
+  async updateBoard(id: Uuid, patch: BoardPatch): Promise<Board> {
+    const current = await this.require(await this.repo.getById(boardTable, id), 'board', id)
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(command('updateBoard', (m) => m.put(boardTable, updated)))
+  }
+
+  /**
+   * Delete a board and everything visual under it — its nodes, edges, views and
+   * per-view positions — as a single undoable command (spec §7.1: removing a
+   * board never touches the base entities/relationships, only the placements).
+   */
+  async deleteBoard(id: Uuid): Promise<void> {
+    await this.require(await this.repo.getById(boardTable, id), 'board', id)
+    const nodes = await this.repo.list(nodeTable, { boardId: id })
+    const edges = await this.repo.list(edgeTable, { boardId: id })
+    const views = await this.repo.list(viewTable, { boardId: id })
+    const positions: { viewId: Uuid; nodeId: Uuid }[] = []
+    for (const view of views) {
+      const ps = await this.repo.list(nodePositionTable, { viewId: view.id })
+      for (const p of ps) positions.push({ viewId: view.id, nodeId: p.nodeId })
+    }
+    await this.commands.execute(
+      command('deleteBoard', async (m) => {
+        for (const p of positions) await m.remove(nodePositionTable, p)
+        for (const e of edges) await m.remove(edgeTable, { id: e.id })
+        for (const n of nodes) await m.remove(nodeTable, { id: n.id })
+        for (const v of views) await m.remove(viewTable, { id: v.id })
+        await m.remove(boardTable, { id })
+      }),
+    )
+  }
+
   async createNode(boardId: Uuid, input: NodeInput): Promise<Node> {
     const node: Node = {
       ...this.stampNew(),
@@ -317,6 +353,63 @@ export class LocalGateway implements DataGateway {
       viewport: input.viewport ?? null,
     }
     return this.commands.execute(command('createView', (m) => m.insert(viewTable, view)))
+  }
+
+  /**
+   * Patch a view's presentation (spec §7.2): rename, switch palette, set the
+   * filter/focus lens, or persist pan/zoom. `null` clears filter/viewport.
+   * Switching `paletteId` is how a palette swap re-skins a view — `diagram.ts`
+   * resolves tokens from the view's palette, so token-referenced styles follow.
+   */
+  async updateView(id: Uuid, patch: ViewPatch): Promise<View> {
+    const current = await this.require(await this.repo.getById(viewTable, id), 'view', id)
+    const updated = this.bumpVersion(applyPatch(current, patch))
+    return this.commands.execute(command('updateView', (m) => m.put(viewTable, updated)))
+  }
+
+  /** Delete a view and its per-view positions as a single undoable command. */
+  async deleteView(id: Uuid): Promise<void> {
+    await this.require(await this.repo.getById(viewTable, id), 'view', id)
+    const positions = await this.repo.list(nodePositionTable, { viewId: id })
+    await this.commands.execute(
+      command('deleteView', async (m) => {
+        for (const p of positions) await m.remove(nodePositionTable, { viewId: id, nodeId: p.nodeId })
+        await m.remove(viewTable, { id })
+      }),
+    )
+  }
+
+  /**
+   * Place an EXISTING entity as a new node + per-view position on a board+view
+   * (spec §7.1 — the same entity can appear on many boards). One undoable
+   * command; the base entity is untouched so edits reflect on every board.
+   */
+  async placeEntity(
+    boardId: Uuid,
+    viewId: Uuid,
+    input: PlaceEntityInput,
+  ): Promise<PlaceEntityResult> {
+    await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const entity = await this.require(
+      await this.repo.getById(entityTable, input.entityId),
+      'entity',
+      input.entityId,
+    )
+    const node: Node = {
+      ...this.stampNew(),
+      boardId,
+      entityId: entity.id,
+      label: input.label ?? '',
+      styleOverride: input.styleOverride ?? {},
+    }
+    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    return this.commands.execute(
+      command('placeEntity', async (m) => {
+        await m.insert(nodeTable, node)
+        await m.put(nodePositionTable, position)
+        return { node, position: { nodeId: node.id, x: input.x, y: input.y } }
+      }),
+    )
   }
 
   async bulkUpsertPositions(

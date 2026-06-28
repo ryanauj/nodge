@@ -119,6 +119,10 @@ export interface BoardInput {
   name: string
   description?: string
 }
+export interface BoardPatch {
+  name?: string
+  description?: string
+}
 
 export interface NodeInput {
   entityId: Uuid
@@ -145,6 +149,38 @@ export interface ViewInput {
   paletteId?: Uuid | null
   filter?: ViewFilter | null
   viewport?: Viewport | null
+}
+
+/**
+ * Patch a view's presentation (spec §7.2): rename it, switch its palette
+ * (`paletteId`), set its filter/focus lens (`filter`) or persist pan/zoom
+ * (`viewport`). `null` clears the filter/viewport; omitted fields are unchanged.
+ * Applied as one undoable command.
+ */
+export interface ViewPatch {
+  name?: string
+  paletteId?: Uuid | null
+  filter?: ViewFilter | null
+  viewport?: Viewport | null
+}
+
+/**
+ * Place an EXISTING base entity as a NEW node on a board + view (spec §7.1 —
+ * "the same entity can be placed on many boards"). Creates the {@link Node}
+ * placement plus its per-view position as a single undoable command; the base
+ * entity is untouched, so editing it reflects on every board placing it.
+ */
+export interface PlaceEntityInput {
+  entityId: Uuid
+  x: number
+  y: number
+  label?: string
+  styleOverride?: StyleDelta
+}
+
+export interface PlaceEntityResult {
+  node: Node
+  position: NodePositionInput
 }
 
 export interface NodePositionInput {
@@ -389,13 +425,21 @@ export interface DataGateway {
   // Boards / Nodes / Edges / Views
   createBoard(graphId: Uuid, input: BoardInput): Promise<Board>
   getBoard(id: Uuid): Promise<BoardDetail>
+  updateBoard(id: Uuid, patch: BoardPatch): Promise<Board>
+  /** Delete a board and everything visual under it (nodes/edges/views/positions), one command. */
+  deleteBoard(id: Uuid): Promise<void>
   createNode(boardId: Uuid, input: NodeInput): Promise<Node>
   updateNode(id: Uuid, patch: NodePatch): Promise<Node>
   deleteNode(id: Uuid): Promise<void>
   createEdge(boardId: Uuid, input: EdgeInput): Promise<Edge>
   deleteEdge(id: Uuid): Promise<void>
   createView(boardId: Uuid, input: ViewInput): Promise<View>
+  updateView(id: Uuid, patch: ViewPatch): Promise<View>
+  /** Delete a view and its per-view positions, one command. */
+  deleteView(id: Uuid): Promise<void>
   bulkUpsertPositions(viewId: Uuid, positions: NodePositionInput[]): Promise<NodePositionInput[]>
+  /** Place an existing entity as a new node + position on a board+view (§7.1), one command. */
+  placeEntity(boardId: Uuid, viewId: Uuid, input: PlaceEntityInput): Promise<PlaceEntityResult>
 
   // Composite canvas gestures (single undoable command each)
   addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult>

@@ -1,15 +1,17 @@
 /**
- * Phase 1 core editor: one board, one view (spec §12).
+ * Phase 3 core editor: multiple boards + multiple views per board (spec §12).
  *
  * A React Flow canvas wired to the gateway + command layer. Every gesture goes
  * through the gateway: add a node (entity + placement), connect two nodes
  * (relationship + edge), drag to move (per-view positions, one undoable command
- * per drag end). Undo/redo, save-to-file and load-from-file hang off the same
- * seam. The chrome is canvas-first and edge-anchored so it stays usable on a
- * mobile baseline; the full touch model is Phase 5.
+ * per drag end). The active board/view is reflected in the URL via React Router;
+ * boards/views/palette switchers drive navigation and `updateView`. Undo/redo,
+ * save-to-file and load-from-file hang off the same seam. The chrome stays
+ * canvas-first and usable on a mobile baseline; the full touch model is Phase 5.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Background,
   Controls,
@@ -24,13 +26,18 @@ import {
   type FinalConnectionState,
   type NodeChange,
 } from '@xyflow/react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import '@xyflow/react/dist/style.css'
 import { useGateway } from '../app/GatewayContext'
 import { buildClipboard, parseClipboard, serializeClipboard } from '../gateway/clipboard'
 import type { Clipboard } from '../gateway/types'
 import type { Entity, Prototype } from '../model'
-import { bootstrapOrOpen, type DiagramIds } from './bootstrap'
+import {
+  ACTIVE_GRAPH_KEY,
+  bootstrapOrOpen,
+  reopen,
+  type DiagramIds,
+} from './bootstrap'
 import { loadDiagram, type FlowEdge, type FlowNode } from './diagram'
 import {
   downloadText,
@@ -40,10 +47,23 @@ import {
   pickTextFile,
 } from './fileIo'
 import { NodgeNode } from './NodgeNode'
+import { BoardViewBar } from './panels/BoardViewBar'
 import { EntityPanel } from './panels/EntityPanel'
+import { PaletteSwitcher } from './panels/PaletteSwitcher'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
 import './editor.css'
+
+/** Build the board/view URL the router reflects the active diagram into. */
+function diagramPath(boardId: string, viewId: string): string {
+  return `/board/${boardId}/view/${viewId}`
+}
+
+/** Parse the active board/view ids out of a `/board/:boardId/view/:viewId` path. */
+function parseDiagramPath(pathname: string): { boardId: string | null; viewId: string | null } {
+  const m = pathname.match(/\/board\/([^/]+)\/view\/([^/]+)/)
+  return m ? { boardId: m[1], viewId: m[2] } : { boardId: null, viewId: null }
+}
 
 const POSITION_FLUSH_MS = 250
 
@@ -53,13 +73,51 @@ const nodeTypes = { nodge: NodgeNode }
 function EditorCanvas() {
   const getGateway = useGateway()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const { boardId: routeBoardId, viewId: routeViewId } = parseDiagramPath(pathname)
 
+  // Bootstrap resolves the *active graph* (from the localStorage pointer, or by
+  // seeding a default graph on first run) and a fallback board/view.
   const bootstrap = useQuery<DiagramIds>({
     queryKey: ['bootstrap'],
     queryFn: async () => bootstrapOrOpen(await getGateway()),
     staleTime: Infinity,
   })
-  const ids = bootstrap.data ?? null
+  const graphId = bootstrap.data?.graphId ?? null
+
+  // Resolve the active board/view from the URL (or the bootstrap fallback),
+  // tolerating stale ids. Re-runs whenever the route changes.
+  const resolved = useQuery<DiagramIds | null>({
+    queryKey: ['resolved', graphId, routeBoardId, routeViewId],
+    queryFn: async () => {
+      const gw = await getGateway()
+      const ids = await reopen(gw, graphId!, routeBoardId, routeViewId)
+      return ids ?? bootstrap.data ?? null
+    },
+    enabled: !!graphId,
+    // Keep the resolved ids stable across the `/` → board/view redirect so the
+    // canvas/toolbar never flicker back to a disabled (null-ids) state.
+    placeholderData: keepPreviousData,
+  })
+  const ids = resolved.data ?? null
+
+  // Redirect the bare `/` route to the resolved board/view URL so the active
+  // diagram is always reflected in the URL (spec §11). Deep links (params
+  // present) are trusted as-is — `reopen` already falls back to a valid
+  // board/view when an id is stale — so this never fights user navigation.
+  useEffect(() => {
+    if (!ids) return
+    if (!routeBoardId || !routeViewId) {
+      navigate(diagramPath(ids.boardId, ids.viewId), { replace: true })
+    }
+  }, [ids, routeBoardId, routeViewId, navigate])
+
+  // The canvas is "ready" once the URL reflects the resolved board/view (the
+  // initial `/`→board/view redirect has settled). Gating interaction on this
+  // means add/connect gestures never overlap the pending redirect/resolution.
+  const ready =
+    !!ids && ids.boardId === routeBoardId && ids.viewId === routeViewId
 
   const diagram = useQuery({
     queryKey: ['diagram', ids?.graphId, ids?.boardId, ids?.viewId],
@@ -91,7 +149,24 @@ function EditorCanvas() {
     prototypes: Prototype[]
   } | null>(null)
 
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setViewport, getViewport } = useReactFlow()
+
+  // Navigate to a board/view, persisting the current viewport first so each
+  // view keeps its own pan/zoom (spec §7.2). The URL change re-resolves ids.
+  const persistViewport = useCallback(async () => {
+    if (!ids) return
+    const vp = getViewport()
+    const gw = await getGateway()
+    await gw.updateView(ids.viewId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } })
+  }, [ids, getGateway, getViewport])
+
+  const navigateTo = useCallback(
+    async (boardId: string, viewId: string) => {
+      await persistViewport()
+      navigate(diagramPath(boardId, viewId))
+    },
+    [persistViewport, navigate],
+  )
 
   const refreshUndo = useCallback(async () => {
     const gw = await getGateway()
@@ -106,6 +181,16 @@ function EditorCanvas() {
     setEdges(diagram.data.flowEdges)
     void refreshUndo()
   }, [diagram.data, setNodes, setEdges, refreshUndo])
+
+  // Restore the view's saved pan/zoom on view switch (spec §7.2). Keyed on the
+  // active view id so it fires only when the view changes, not on every edit.
+  const restoredViewRef = useRef<string | null>(null)
+  useEffect(() => {
+    const snap = diagram.data
+    if (!snap || snap.ids.viewId === restoredViewRef.current) return
+    restoredViewRef.current = snap.ids.viewId
+    if (snap.viewport) void setViewport(snap.viewport)
+  }, [diagram.data, setViewport])
 
   const invalidateDiagram = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['diagram'] }),
@@ -247,6 +332,21 @@ function EditorCanvas() {
     [onNodesChangeBase, ids, getGateway, refreshUndo],
   )
 
+  // Persist the view's pan/zoom shortly after a move ends (spec §7.2). This is a
+  // presentation update, not a structural one, so it is debounced and not pushed
+  // onto the undo stack as a discrete user gesture.
+  const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onMoveEnd = useCallback(() => {
+    if (!ids) return
+    if (viewportTimer.current) clearTimeout(viewportTimer.current)
+    viewportTimer.current = setTimeout(() => {
+      const vp = getViewport()
+      void getGateway().then((gw) =>
+        gw.updateView(ids.viewId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } }),
+      )
+    }, POSITION_FLUSH_MS)
+  }, [ids, getGateway, getViewport])
+
   const undo = useMutation({
     mutationFn: async () => (await getGateway()).undo(),
     onSuccess: async () => {
@@ -354,7 +454,7 @@ function EditorCanvas() {
       const gw = await getGateway()
       const graphId = await importGraphText(gw, text)
       try {
-        localStorage.setItem('nodge.activeGraphId', graphId)
+        localStorage.setItem(ACTIVE_GRAPH_KEY, graphId)
       } catch {
         /* storage may be unavailable; the in-memory store still holds the graph */
       }
@@ -363,7 +463,35 @@ function EditorCanvas() {
     },
   })
 
-  const busy = bootstrap.isLoading || (!!ids && diagram.isLoading)
+  // Drill-down navigation from a typed link (spec §5.4, §7.4): a `diagram` link
+  // targets a board id → open its first view; an `entity` link targets an entity
+  // id → open a board/view where that entity is placed (via the cross-ref index).
+  const drillTo = useCallback(
+    async (kind: 'diagram' | 'entity', target: string) => {
+      const gw = await getGateway()
+      if (kind === 'diagram') {
+        try {
+          const board = await gw.getBoard(target)
+          const view = board.views[0]
+          if (view) await navigateTo(board.id, view.id)
+        } catch {
+          /* dangling board reference — ignore */
+        }
+        return
+      }
+      const usage = await gw.getEntityUsages(target)
+      const placement = usage.placements[0]
+      if (!placement) return
+      const board = await gw.getBoard(placement.boardId)
+      const view = board.views[0]
+      if (view) await navigateTo(board.id, view.id)
+    },
+    [getGateway, navigateTo],
+  )
+
+  // Busy whenever the diagram is (re)fetching — not just the initial load — so
+  // the "settling" indicator reflects background refetches after edits too.
+  const busy = !ready || diagram.isFetching
 
   return (
     <div className="editor" data-testid="editor">
@@ -376,6 +504,7 @@ function EditorCanvas() {
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         onSelectionChange={onSelectionChange}
+        onMoveEnd={onMoveEnd}
         fitView
         proOptions={{ hideAttribution: true }}
       >
@@ -384,7 +513,7 @@ function EditorCanvas() {
         <MiniMap pannable zoomable />
         <Panel position="top-left">
           <div className="toolbar" role="toolbar" aria-label="Editor toolbar">
-            <button onClick={() => addNode.mutate()} disabled={!ids || addNode.isPending}>
+            <button onClick={() => addNode.mutate()} disabled={!ready || addNode.isPending}>
               Add node
             </button>
             <button onClick={() => undo.mutate()} disabled={!canUndo} aria-label="Undo">
@@ -413,14 +542,36 @@ function EditorCanvas() {
         </Panel>
         {busy && (
           <Panel position="top-center">
-            <span className="editor-status">Opening local store…</span>
+            <span className="editor-status" data-testid="editor-busy">
+              {ready ? 'Syncing…' : 'Opening local store…'}
+            </span>
           </Panel>
         )}
       </ReactFlow>
 
-      {/* Side panels: prototype library + entity properties / cross-reference. */}
+      {/* Side panels: boards/views + palette switchers, prototype library,
+          entity properties / cross-reference + drill-down. */}
       {ids && (
         <aside className="side-panels" aria-label="Editor panels">
+          <BoardViewBar
+            graphId={ids.graphId}
+            boardId={ids.boardId}
+            viewId={ids.viewId}
+            onNavigate={(b, v) => void navigateTo(b, v)}
+            onChanged={() => {
+              void queryClient.invalidateQueries({ queryKey: ['graph', ids.graphId] })
+              void queryClient.invalidateQueries({ queryKey: ['board', ids.boardId] })
+            }}
+          />
+          <PaletteSwitcher
+            graphId={ids.graphId}
+            viewId={ids.viewId}
+            currentPaletteId={ids.paletteId}
+            onChanged={() => {
+              void queryClient.invalidateQueries({ queryKey: ['resolved'] })
+              void invalidateDiagram()
+            }}
+          />
           <PrototypePanel
             graphId={ids.graphId}
             selectedNodeId={selectedNodeId}
@@ -433,6 +584,7 @@ function EditorCanvas() {
               key={selectedEntityId}
               entityId={selectedEntityId}
               onChanged={() => void invalidateDiagram()}
+              onNavigate={(kind, target) => void drillTo(kind, target)}
             />
           )}
         </aside>
@@ -454,7 +606,7 @@ function EditorCanvas() {
         className="fab"
         aria-label="Add node"
         onClick={() => addNode.mutate()}
-        disabled={!ids || addNode.isPending}
+        disabled={!ready || addNode.isPending}
       >
         +
       </button>
