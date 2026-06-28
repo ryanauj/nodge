@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Background,
   Controls,
@@ -59,6 +59,12 @@ function diagramPath(boardId: string, viewId: string): string {
   return `/board/${boardId}/view/${viewId}`
 }
 
+/** Parse the active board/view ids out of a `/board/:boardId/view/:viewId` path. */
+function parseDiagramPath(pathname: string): { boardId: string | null; viewId: string | null } {
+  const m = pathname.match(/\/board\/([^/]+)\/view\/([^/]+)/)
+  return m ? { boardId: m[1], viewId: m[2] } : { boardId: null, viewId: null }
+}
+
 const POSITION_FLUSH_MS = 250
 
 /** Stable node-type registry (defining this inline would remount every render). */
@@ -68,9 +74,8 @@ function EditorCanvas() {
   const getGateway = useGateway()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const params = useParams<{ boardId?: string; viewId?: string }>()
-  const routeBoardId = params.boardId ?? null
-  const routeViewId = params.viewId ?? null
+  const { pathname } = useLocation()
+  const { boardId: routeBoardId, viewId: routeViewId } = parseDiagramPath(pathname)
 
   // Bootstrap resolves the *active graph* (from the localStorage pointer, or by
   // seeding a default graph on first run) and a fallback board/view.
@@ -97,13 +102,22 @@ function EditorCanvas() {
   })
   const ids = resolved.data ?? null
 
-  // Keep the URL in sync with the resolved diagram (deep-link + redirect of `/`).
+  // Redirect the bare `/` route to the resolved board/view URL so the active
+  // diagram is always reflected in the URL (spec §11). Deep links (params
+  // present) are trusted as-is — `reopen` already falls back to a valid
+  // board/view when an id is stale — so this never fights user navigation.
   useEffect(() => {
     if (!ids) return
-    if (ids.boardId !== routeBoardId || ids.viewId !== routeViewId) {
+    if (!routeBoardId || !routeViewId) {
       navigate(diagramPath(ids.boardId, ids.viewId), { replace: true })
     }
   }, [ids, routeBoardId, routeViewId, navigate])
+
+  // The canvas is "ready" once the URL reflects the resolved board/view (the
+  // initial `/`→board/view redirect has settled). Gating interaction on this
+  // means add/connect gestures never overlap the pending redirect/resolution.
+  const ready =
+    !!ids && ids.boardId === routeBoardId && ids.viewId === routeViewId
 
   const diagram = useQuery({
     queryKey: ['diagram', ids?.graphId, ids?.boardId, ids?.viewId],
@@ -475,7 +489,9 @@ function EditorCanvas() {
     [getGateway, navigateTo],
   )
 
-  const busy = bootstrap.isLoading || resolved.isLoading || (!!ids && diagram.isLoading)
+  // Busy whenever the diagram is (re)fetching — not just the initial load — so
+  // the "settling" indicator reflects background refetches after edits too.
+  const busy = !ready || diagram.isFetching
 
   return (
     <div className="editor" data-testid="editor">
@@ -497,7 +513,7 @@ function EditorCanvas() {
         <MiniMap pannable zoomable />
         <Panel position="top-left">
           <div className="toolbar" role="toolbar" aria-label="Editor toolbar">
-            <button onClick={() => addNode.mutate()} disabled={!ids || addNode.isPending}>
+            <button onClick={() => addNode.mutate()} disabled={!ready || addNode.isPending}>
               Add node
             </button>
             <button onClick={() => undo.mutate()} disabled={!canUndo} aria-label="Undo">
@@ -526,7 +542,9 @@ function EditorCanvas() {
         </Panel>
         {busy && (
           <Panel position="top-center">
-            <span className="editor-status">Opening local store…</span>
+            <span className="editor-status" data-testid="editor-busy">
+              {ready ? 'Syncing…' : 'Opening local store…'}
+            </span>
           </Panel>
         )}
       </ReactFlow>
@@ -588,7 +606,7 @@ function EditorCanvas() {
         className="fab"
         aria-label="Add node"
         onClick={() => addNode.mutate()}
-        disabled={!ids || addNode.isPending}
+        disabled={!ready || addNode.isPending}
       >
         +
       </button>

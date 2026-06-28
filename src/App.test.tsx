@@ -15,8 +15,7 @@ async function renderApp() {
       <GatewayProvider value={() => Promise.resolve(gw)}>
         <MemoryRouter initialEntries={['/']}>
           <Routes>
-            <Route path="/" element={<App />} />
-            <Route path="/board/:boardId/view/:viewId" element={<App />} />
+            <Route path="*" element={<App />} />
           </Routes>
         </MemoryRouter>
       </GatewayProvider>
