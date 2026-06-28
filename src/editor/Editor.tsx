@@ -77,8 +77,9 @@ import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
 import { BottomSheet } from './panels/BottomSheet'
-import { ToolModeToolbar } from './ToolModeToolbar'
+import { FloatingDock } from './panels/FloatingDock'
 import { toolModeFlowProps, useToolMode, SHEET_LABELS, type SheetKey } from './toolMode'
+import { useCanvasPrefs } from './canvasPrefs'
 import './editor.css'
 
 /** Build the board/view URL the router reflects the active diagram into. */
@@ -174,6 +175,11 @@ function EditorCanvas() {
   const connectSourceId = useToolMode((s) => s.connectSourceId)
   const setConnectSource = useToolMode((s) => s.setConnectSource)
   const flowProps = useMemo(() => toolModeFlowProps(mode), [mode])
+
+  // Canvas display prefs (persisted client UI state): the minimap and background
+  // grid are toggleable from the floating settings panel (spec §10.1 chrome).
+  const showMinimap = useCanvasPrefs((s) => s.showMinimap)
+  const showBackground = useCanvasPrefs((s) => s.showBackground)
 
   // Drag-to-create quick-picker (§9.4) state, populated on connect-to-empty.
   const [pickerCtx, setPickerCtx] = useState<{
@@ -742,9 +748,9 @@ function EditorCanvas() {
         // viewport so a big board stays interactive; DB work stays in the worker.
         onlyRenderVisibleElements
       >
-        <Background />
+        {showBackground && <Background />}
         <Controls />
-        <MiniMap pannable zoomable />
+        {showMinimap && <MiniMap pannable zoomable />}
         <Panel position="top-left">
           <div className="toolbar" role="toolbar" aria-label="Editor toolbar">
             <button onClick={() => addNode.mutate()} disabled={!ready || addNode.isPending}>
@@ -813,20 +819,29 @@ function EditorCanvas() {
         />
       )}
 
-      {/* Thumb-reach add control for narrow viewports (mobile baseline). The FAB
-          stamps a node; in Add mode tapping the canvas also adds at a point. */}
-      <button
-        className="fab"
-        aria-label="Add node"
-        onClick={() => addNode.mutate()}
-        disabled={!ready || addNode.isPending}
-      >
-        +
-      </button>
-
-      {/* Phase 5 thumb-reach tool toolbar (Select / Connect / Add) + sheet tabs.
-          Mobile-only via CSS; tool/sheet state lives in the Zustand store. */}
-      {ids && <ToolModeToolbar availableSheets={[...availableSheets]} />}
+      {/* Draggable floating dock (mobile): the Select/Connect/Add tool modes plus
+          a customisable, two-level set of controls (slim row + expandable panel)
+          for undo/redo/add, copy/paste, the panel openers, the display toggles,
+          and Save/Load. Replaces the old bottom tool bar + add FAB. Tool/display
+          state is client UI state; the editing/file actions call back into the
+          gateway-backed mutations above. Mobile-only via CSS — desktop keeps the
+          top toolbar + side-panel column. */}
+      {ids && (
+        <FloatingDock
+          availableSheets={[...availableSheets]}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          canAct={ready}
+          hasSelection={!!selectedNodeId}
+          onAddNode={() => addNode.mutate()}
+          onUndo={() => undo.mutate()}
+          onRedo={() => redo.mutate()}
+          onCopy={() => void copySelection()}
+          onPaste={() => pasteClipboard.mutate()}
+          onSave={() => save.mutate()}
+          onLoad={() => load.mutate()}
+        />
+      )}
     </PaletteRoot>
   )
 }
