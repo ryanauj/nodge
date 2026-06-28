@@ -1,0 +1,75 @@
+/* Canvas-first, edge-anchored chrome (spec §10.1). */
+
+.editor {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: var(--nodge-chrome, rgba(255, 255, 255, 0.92));
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.toolbar button {
+  /* ≥44px touch targets (spec §10.2). */
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(0, 0, 0, 0.12);
+  margin: 0 2px;
+}
+
+.editor-status {
+  padding: 6px 12px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+}
+
+/* Floating add button — only shown on narrow (touch) viewports. */
+.fab {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  font-size: 28px;
+  line-height: 1;
+  color: #fff;
+  background: #4361ee;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  display: none;
+  z-index: 5;
+}
+
+@media (max-width: 640px) {
+  .fab {
+    display: block;
+  }
+}

@@ -26,3 +26,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      # Playwright smoke. The runner has no preinstalled browser, so fetch
+      # Chromium (+ OS deps) here; the config falls back to it automatically.
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

@@ -1,7 +1,7 @@
-# nodes-plus-edges
+# nodge
 
-Vite + React + TypeScript scaffold with an **aggressive client-side gate**
-instead of per-PR CI.
+A client-side-only flow diagram editor (Vite + React + TypeScript) with an
+**aggressive client-side gate** instead of per-PR CI.
 
 ## Develop
 
@@ -19,15 +19,15 @@ pnpm build
 ## How checks work
 
 The primary gate is a **husky `pre-push` hook** (`.husky/pre-push`) that runs
-`pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` and aborts the
-push if any step fails. It is installed automatically by `pnpm install` (the
-`prepare` script).
+`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, and the `pnpm test:e2e`
+Playwright smoke, and aborts the push if any step fails. It is installed
+automatically by `pnpm install` (the `prepare` script).
 
 > The hook is *technically* bypassable (`git push --no-verify`) because
 > client-side hooks are advisory. That escape hatch is for emergencies only.
 
 GitHub Actions does **not** run on pull requests. `.github/workflows/ci.yml`
-only re-runs `typecheck` + `lint` + `test` + `build` on pushes to `main`, as a
-thin backstop for anything that slipped past the hook.
+only re-runs `typecheck` + `lint` + `test` + `build` + the Playwright smoke on
+pushes to `main`, as a thin backstop for anything that slipped past the hook.
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on push to
 `main`.

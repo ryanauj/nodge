@@ -28,4 +28,10 @@ pnpm build || {
   exit 1
 }
 
+echo "▶ pre-push: pnpm test:e2e (Playwright smoke)"
+pnpm test:e2e || {
+  echo "✖ e2e smoke failed — push aborted. Fix errors or use --no-verify to override." >&2
+  exit 1
+}
+
 echo "✔ pre-push checks passed"

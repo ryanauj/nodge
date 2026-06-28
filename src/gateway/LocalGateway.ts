@@ -41,8 +41,12 @@ import {
 import { migrateDocument } from '../io/jsonMigrations'
 import { loadDocumentIntoRepository } from '../io/loadDocument'
 import type {
+  AddNodeInput,
+  AddNodeResult,
   BoardDetail,
   BoardInput,
+  ConnectNodesInput,
+  ConnectNodesResult,
   DataGateway,
   EdgeInput,
   EntityInput,
@@ -314,6 +318,79 @@ export class LocalGateway implements DataGateway {
     return positions
   }
 
+  // ── Composite canvas gestures ────────────────────────────────────────────
+  async addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
+    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const entity: Entity = {
+      ...this.stampNew(),
+      graphId: board.graphId,
+      name: input.name,
+      prototypeId: input.prototypeId ?? null,
+      styleOverride: input.entityStyleOverride ?? {},
+      links: [],
+      metadata: {},
+    }
+    const node: Node = {
+      ...this.stampNew(),
+      boardId,
+      entityId: entity.id,
+      label: input.name,
+      styleOverride: input.styleOverride ?? {},
+    }
+    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    return this.commands.execute(
+      command('addNode', async (m) => {
+        await m.insert(entityTable, entity)
+        await m.insert(nodeTable, node)
+        await m.put(nodePositionTable, position)
+        return { entity, node, position: { nodeId: node.id, x: input.x, y: input.y } }
+      }),
+    )
+  }
+
+  async connectNodes(boardId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult> {
+    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const source = await this.require(
+      await this.repo.getById(nodeTable, input.sourceNodeId),
+      'node',
+      input.sourceNodeId,
+    )
+    const target = await this.require(
+      await this.repo.getById(nodeTable, input.targetNodeId),
+      'node',
+      input.targetNodeId,
+    )
+    const relationship: Relationship = {
+      ...this.stampNew(),
+      graphId: board.graphId,
+      sourceEntityId: source.entityId,
+      targetEntityId: target.entityId,
+      prototypeId: input.prototypeId ?? null,
+      directed: input.directed ?? true,
+      label: input.label ?? '',
+      styleOverride: {},
+      metadata: {},
+    }
+    const edge: Edge = {
+      ...this.stampNew(),
+      boardId,
+      relationshipId: relationship.id,
+      sourceNodeId: input.sourceNodeId,
+      targetNodeId: input.targetNodeId,
+      sourceHandle: input.sourceHandle ?? null,
+      targetHandle: input.targetHandle ?? null,
+      label: input.label ?? '',
+      styleOverride: {},
+    }
+    return this.commands.execute(
+      command('connectNodes', async (m) => {
+        await m.insert(relationshipTable, relationship)
+        await m.insert(edgeTable, edge)
+        return { relationship, edge }
+      }),
+    )
+  }
+
   // ── Prototypes / Palettes / StyleProfiles ────────────────────────────────
   async listPrototypes(graphId: Uuid): Promise<Prototype[]> {
     return this.repo.list(prototypeTable, { graphId })
@@ -366,6 +443,23 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(
       command('createStyleProfile', (m) => m.insert(styleProfileTable, styleProfile)),
     )
+  }
+
+  // ── Undo / redo ───────────────────────────────────────────────────────────
+  undo(): Promise<boolean> {
+    return this.commands.undo()
+  }
+
+  redo(): Promise<boolean> {
+    return this.commands.redo()
+  }
+
+  canUndo(): boolean {
+    return this.commands.canUndo
+  }
+
+  canRedo(): boolean {
+    return this.commands.canRedo
   }
 
   // ── Project I/O ──────────────────────────────────────────────────────────
