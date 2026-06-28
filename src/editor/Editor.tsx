@@ -27,12 +27,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import '@xyflow/react/dist/style.css'
 import { useGateway } from '../app/GatewayContext'
-import {
-  buildClipboard,
-  parseClipboard,
-  serializeClipboard,
-  type Clipboard,
-} from '../gateway'
+import { buildClipboard, parseClipboard, serializeClipboard } from '../gateway/clipboard'
+import type { Clipboard } from '../gateway/types'
 import type { Entity, Prototype } from '../model'
 import { bootstrapOrOpen, type DiagramIds } from './bootstrap'
 import { loadDiagram, type FlowEdge, type FlowNode } from './diagram'
