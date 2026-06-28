@@ -5,10 +5,13 @@
  *
  * A resolved style is computed by layering, later-wins:
  *
- *   Palette tokens  →  Prototype style  →  base override  →  placement override
+ *   Palette tokens  →  Prototype style  →  StyleProfile  →  base override  →  placement override
  *
  * For nodes the base override is the Entity's `styleOverride` and the placement
  * override is the Node's; for edges it is the Relationship's then the Edge's.
+ * A referenced {@link StyleProfile} (§8.3 — a named shared "look") layers in
+ * just above the palette/prototype baseline but below the explicit entity/node
+ * pins, so a profile re-skins everything it covers while a pinned key still wins.
  * Because the palette supplies the base, a node that pins nothing simply
  * *follows the palette* — swapping the palette re-skins it. A layer may pin a
  * raw value for any key as the escape hatch (the link/unlink affordance).

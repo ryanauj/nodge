@@ -30,7 +30,7 @@ import { parseRow } from './table'
 import { ValidationError, expectArray, expectNumber, expectRecord } from './validate'
 
 /** The current document format version. The JSON migration chain targets this. */
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 2
 
 /** A node position as carried inside a view (viewId is implied by nesting). */
 export interface DocumentNodePosition {

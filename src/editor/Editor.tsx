@@ -56,6 +56,7 @@ import { PaletteSwitcher } from './panels/PaletteSwitcher'
 import { PaletteEditor } from './panels/PaletteEditor'
 import { StyleProfilePanel } from './panels/StyleProfilePanel'
 import { NodeStylePanel } from './panels/NodeStylePanel'
+import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
 import './editor.css'
@@ -529,6 +530,10 @@ function EditorCanvas() {
   const selectedNodeStyle = selectedNodeId
     ? nodes.find((n) => n.id === selectedNodeId)?.data.style ?? null
     : null
+  // The resolved style of the selected edge (for the edge link/unlink panel).
+  const selectedEdgeStyle = selectedEdgeId
+    ? edges.find((e) => e.id === selectedEdgeId)?.style ?? null
+    : null
 
   return (
     <PaletteRoot
@@ -631,6 +636,15 @@ function EditorCanvas() {
               key={selectedNodeId}
               nodeId={selectedNodeId}
               resolved={selectedNodeStyle}
+              graphId={ids.graphId}
+              onChanged={() => void invalidateDiagram()}
+            />
+          )}
+          {selectedEdgeId && selectedEdgeStyle && (
+            <EdgeStylePanel
+              key={selectedEdgeId}
+              edgeId={selectedEdgeId}
+              resolved={selectedEdgeStyle}
               onChanged={() => void invalidateDiagram()}
             />
           )}

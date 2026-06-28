@@ -33,6 +33,8 @@ export interface NodeStylePanelProps {
   nodeId: Uuid
   /** The node's current resolved style (effective values), from the snapshot. */
   resolved: ResolvedNodeStyle
+  /** The active graph — enables the "apply StyleProfile to this node" affordance. */
+  graphId?: Uuid
   onChanged: () => void
 }
 
@@ -52,8 +54,15 @@ const CONTROLS: Control[] = [
   { key: 'elevation', kind: 'enum', options: ELEVATIONS },
 ]
 
-export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelProps) {
+export function NodeStylePanel({ nodeId, resolved, graphId, onChanged }: NodeStylePanelProps) {
   const getGateway = useGateway()
+
+  // The graph's StyleProfiles (node-targeted) for the "apply profile" affordance.
+  const profiles = useQuery({
+    queryKey: ['style-profiles', graphId],
+    queryFn: async () => (await getGateway()).listStyleProfiles(graphId!),
+    enabled: !!graphId,
+  })
 
   const node = useQuery({
     queryKey: ['node-style', nodeId],
@@ -92,6 +101,18 @@ export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelPr
     save.mutate(next)
   }
 
+  // Apply (or clear) the node's referenced StyleProfile — one undoable command.
+  // The profile's `style` layers into the cascade above the palette/prototype
+  // baseline but below explicit pins (§8.3), so it re-skins unpinned controls.
+  const applyProfile = useMutation({
+    mutationFn: async (styleProfileId: Uuid | null) =>
+      (await getGateway()).updateNode(nodeId, { styleProfileId }),
+    onSuccess: async () => {
+      await node.refetch()
+      onChanged()
+    },
+  })
+
   // Pin: copy the current effective value into the override (raw literal).
   const pin = (key: string) => {
     const value = (resolved as unknown as Record<string, unknown>)[key]
@@ -123,6 +144,25 @@ export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelPr
     <section className="panel" aria-label="Node style">
       <h2 className="panel-title">Node style</h2>
       <p className="panel-meta">Follows the palette unless pinned.</p>
+      {graphId && (
+        <label className="panel-field">
+          <span>Style profile</span>
+          <select
+            aria-label="Apply style profile"
+            value={node.data.styleProfileId ?? ''}
+            onChange={(e) =>
+              applyProfile.mutate(e.target.value === '' ? null : e.target.value)
+            }
+          >
+            <option value="">(none)</option>
+            {(profiles.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <ul className="panel-list" aria-label="Style controls">
         {CONTROLS.map((control) => {
           const pinned = isPinned(override, control.key)

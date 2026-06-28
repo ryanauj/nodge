@@ -63,7 +63,9 @@ class FieldImpl<T> implements Field<T> {
   orNull(): Field<T | null> {
     return new FieldImpl<T | null>(this.sqlType, true, {
       parse: (value, path) => (value === null || value === undefined ? null : this.spec.parse(value, path)),
-      toSql: (value) => (value === null ? null : this.spec.toSql(value)),
+      // `undefined` (an omitted nullable column on a row literal) marshals to NULL
+      // too, so a row built without the field still binds cleanly.
+      toSql: (value) => (value === null || value === undefined ? null : this.spec.toSql(value)),
       fromSql: (cell) => (cell === null ? null : this.spec.fromSql(cell)),
     })
   }

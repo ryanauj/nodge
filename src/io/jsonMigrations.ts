@@ -19,7 +19,17 @@ export type JsonMigration = (doc: Record<string, unknown>) => Record<string, unk
  * v0 → v1: the earliest documents predate the top-level `boards`/`palettes`/
  * `styleProfiles` collections and the per-graph `description`. The step fills in
  * the now-required empty collections and defaults so the v1 validator accepts it.
+ *
+ * v1 → v2: nodes/entities/prototypes gained a nullable `styleProfileId` (§8.3 —
+ * a referenced shared look). The step backfills the field with `null` on every
+ * such row so a v1 document loads unchanged and renders identically.
  */
+const backfillStyleProfileId = (row: unknown): Record<string, unknown> => {
+  const r = { ...(row as Record<string, unknown>) }
+  if (!('styleProfileId' in r)) r.styleProfileId = null
+  return r
+}
+
 export const JSON_MIGRATIONS: Readonly<Record<number, JsonMigration>> = {
   0: (doc) => {
     const graph = { ...(doc.graph as Record<string, unknown> | undefined) }
@@ -36,6 +46,16 @@ export const JSON_MIGRATIONS: Readonly<Record<number, JsonMigration>> = {
       palettes: doc.palettes ?? [],
       styleProfiles: doc.styleProfiles ?? [],
     }
+  },
+  1: (doc) => {
+    const entities = ((doc.entities as unknown[]) ?? []).map(backfillStyleProfileId)
+    const prototypes = ((doc.prototypes as unknown[]) ?? []).map(backfillStyleProfileId)
+    const boards = ((doc.boards as unknown[]) ?? []).map((board) => {
+      const b = { ...(board as Record<string, unknown>) }
+      b.nodes = ((b.nodes as unknown[]) ?? []).map(backfillStyleProfileId)
+      return b
+    })
+    return { ...doc, schemaVersion: 2, entities, prototypes, boards }
   },
 }
 

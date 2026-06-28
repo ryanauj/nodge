@@ -67,6 +67,8 @@ export interface GraphPatch {
 export interface EntityInput {
   name: string
   prototypeId?: Uuid | null
+  /** A referenced StyleProfile whose `style` layers into the cascade (§8.3). */
+  styleProfileId?: Uuid | null
   styleOverride?: StyleDelta
   links?: ExternalLink[]
   metadata?: Metadata
@@ -74,6 +76,8 @@ export interface EntityInput {
 export interface EntityPatch {
   name?: string
   prototypeId?: Uuid | null
+  /** Reference a StyleProfile (or `null` to clear it) — §8.3 shared look. */
+  styleProfileId?: Uuid | null
   styleOverride?: StyleDelta
   links?: ExternalLink[]
   metadata?: Metadata
@@ -101,6 +105,8 @@ export interface PrototypeInput {
   name: string
   shape?: string | null
   defaultLabel?: string
+  /** A default referenced StyleProfile (§9.1 "default StyleProfile/look"). */
+  styleProfileId?: Uuid | null
   style?: StyleDelta
   metadata?: Metadata
   linkScaffold?: ExternalLink[]
@@ -110,6 +116,7 @@ export interface PrototypePatch {
   name?: string
   shape?: string | null
   defaultLabel?: string
+  styleProfileId?: Uuid | null
   style?: StyleDelta
   metadata?: Metadata
   linkScaffold?: ExternalLink[]
@@ -127,10 +134,14 @@ export interface BoardPatch {
 export interface NodeInput {
   entityId: Uuid
   label?: string
+  /** A referenced StyleProfile whose `style` layers into the cascade (§8.3). */
+  styleProfileId?: Uuid | null
   styleOverride?: StyleDelta
 }
 export interface NodePatch {
   label?: string
+  /** Reference a StyleProfile (or `null` to clear it) — §8.3 shared look. */
+  styleProfileId?: Uuid | null
   styleOverride?: StyleDelta
 }
 
@@ -140,6 +151,16 @@ export interface EdgeInput {
   targetNodeId: Uuid
   sourceHandle?: string | null
   targetHandle?: string | null
+  label?: string
+  styleOverride?: StyleDelta
+}
+
+/**
+ * Patch an edge placement (spec §8.3 — the edge-level link/unlink affordance).
+ * Pinning an edge style key writes a raw literal into `styleOverride`; unlinking
+ * removes the key so the value follows the palette again. One undoable command.
+ */
+export interface EdgePatch {
   label?: string
   styleOverride?: StyleDelta
 }
@@ -449,6 +470,8 @@ export interface DataGateway {
   updateNode(id: Uuid, patch: NodePatch): Promise<Node>
   deleteNode(id: Uuid): Promise<void>
   createEdge(boardId: Uuid, input: EdgeInput): Promise<Edge>
+  /** Patch an edge placement's label / pinned style overrides (§8.3), one command. */
+  updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge>
   deleteEdge(id: Uuid): Promise<void>
   createView(boardId: Uuid, input: ViewInput): Promise<View>
   updateView(id: Uuid, patch: ViewPatch): Promise<View>
