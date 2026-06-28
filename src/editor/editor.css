@@ -73,3 +73,218 @@
     display: block;
   }
 }
+
+/* ── Phase 2: side panels (prototype library + properties / cross-reference) ── */
+.side-panels {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 320px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.panel {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.panel-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.panel-subtitle {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #555;
+}
+
+.panel-input,
+.panel-field input,
+.panel-field select,
+.panel-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.panel-field {
+  display: block;
+  margin: 6px 0;
+}
+
+.panel-field > span {
+  display: block;
+  font-size: 11px;
+  color: #555;
+  margin-bottom: 2px;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.panel button {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.panel-list {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.proto-kind {
+  color: #888;
+  font-size: 11px;
+}
+
+.proto-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.link-row {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.panel-empty,
+.panel-meta {
+  color: #888;
+  font-style: italic;
+}
+
+.panel-error {
+  color: #c92a2a;
+  margin: 4px 0;
+}
+
+.usage-row {
+  font-size: 12px;
+}
+
+/* ── Phase 2: drag-to-create quick-picker ── */
+.quickpicker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.quickpicker {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  width: 360px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.quickpicker-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.quickpicker-tabs button {
+  flex: 1;
+  padding: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: #f4f4f6;
+  cursor: pointer;
+}
+
+.quickpicker-tabs button.active {
+  background: #4361ee;
+  color: #fff;
+  border-color: #4361ee;
+}
+
+.quickpicker-body input,
+.quickpicker-body select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+  margin-bottom: 8px;
+  font: inherit;
+}
+
+.quickpicker-body button,
+.quickpicker-footer button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.quickpicker-footer {
+  margin-top: 10px;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .side-panels {
+    width: 100vw;
+    left: 0;
+    right: 0;
+    top: auto;
+    height: 45vh;
+    bottom: 0;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}

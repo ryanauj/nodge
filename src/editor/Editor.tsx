@@ -19,12 +19,21 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
+  type FinalConnectionState,
   type NodeChange,
 } from '@xyflow/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import '@xyflow/react/dist/style.css'
 import { useGateway } from '../app/GatewayContext'
+import {
+  buildClipboard,
+  parseClipboard,
+  serializeClipboard,
+  type Clipboard,
+} from '../gateway'
+import type { Entity, Prototype } from '../model'
 import { bootstrapOrOpen, type DiagramIds } from './bootstrap'
 import { loadDiagram, type FlowEdge, type FlowNode } from './diagram'
 import {
@@ -35,6 +44,9 @@ import {
   pickTextFile,
 } from './fileIo'
 import { NodgeNode } from './NodgeNode'
+import { EntityPanel } from './panels/EntityPanel'
+import { PrototypePanel } from './panels/PrototypePanel'
+import { QuickPicker } from './panels/QuickPicker'
 import './editor.css'
 
 const POSITION_FLUSH_MS = 250
@@ -66,6 +78,24 @@ function EditorCanvas() {
 
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+
+  // Selection (for the properties / save-as-prototype surfaces).
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const selectedNodeIdsRef = useRef<string[]>([])
+
+  // Drag-to-create quick-picker (§9.4) state, populated on connect-to-empty.
+  const [pickerCtx, setPickerCtx] = useState<{
+    sourceNodeId: string
+    sourceHandle: string | null
+    x: number
+    y: number
+    entities: Entity[]
+    prototypes: Prototype[]
+  } | null>(null)
+
+  const { screenToFlowPosition } = useReactFlow()
 
   const refreshUndo = useCallback(async () => {
     const gw = await getGateway()
@@ -118,6 +148,83 @@ function EditorCanvas() {
     [connect],
   )
 
+  // Drag-to-create (§9.4): a connection that ends on empty canvas opens the
+  // quick-picker so the user can connect to an existing or a new entity.
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (state.isValid || !state.fromNode || !ids) return
+      const point =
+        'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent)
+      const flowPos = screenToFlowPosition({ x: point.clientX, y: point.clientY })
+      void getGateway().then(async (gw) => {
+        const graph = await gw.getGraph(ids.graphId)
+        setPickerCtx({
+          sourceNodeId: state.fromNode!.id,
+          sourceHandle: state.fromHandle?.id ?? null,
+          x: flowPos.x,
+          y: flowPos.y,
+          entities: graph.entities,
+          prototypes: graph.prototypes,
+        })
+      })
+    },
+    [ids, getGateway, screenToFlowPosition],
+  )
+
+  const connectToExisting = useMutation({
+    mutationFn: async (entityId: string) => {
+      const gw = await getGateway()
+      return gw.connectToExistingEntity(ids!.boardId, ids!.viewId, {
+        sourceNodeId: pickerCtx!.sourceNodeId,
+        entityId,
+        x: pickerCtx!.x,
+        y: pickerCtx!.y,
+        sourceHandle: pickerCtx!.sourceHandle,
+      })
+    },
+    onSuccess: async () => {
+      setPickerCtx(null)
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
+  const connectToNew = useMutation({
+    mutationFn: async ({ name, prototypeId }: { name: string; prototypeId: string | null }) => {
+      const gw = await getGateway()
+      return gw.connectToNewEntity(ids!.boardId, ids!.viewId, {
+        sourceNodeId: pickerCtx!.sourceNodeId,
+        name,
+        x: pickerCtx!.x,
+        y: pickerCtx!.y,
+        prototypeId,
+        sourceHandle: pickerCtx!.sourceHandle,
+      })
+    },
+    onSuccess: async () => {
+      setPickerCtx(null)
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
+  // Stamp a brand-new entity from a prototype, placed clear of the chrome (§9.1).
+  const stampPrototype = useMutation({
+    mutationFn: async (prototype: Prototype) => {
+      const gw = await getGateway()
+      const count = nodesRef.current.length
+      const x = 250 + (count % 5) * 180
+      const y = 200 + Math.floor(count / 5) * 120
+      return gw.addNode(ids!.boardId, ids!.viewId, {
+        name: prototype.defaultLabel || prototype.name,
+        x,
+        y,
+        prototypeId: prototype.id,
+      })
+    },
+    onSuccess: invalidateDiagram,
+  })
+
   // Persist positions one drag end at a time (one undoable command per drag).
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const movedIds = useRef<Set<string>>(new Set())
@@ -159,7 +266,62 @@ function EditorCanvas() {
     },
   })
 
-  // Keyboard shortcuts (desktop): Ctrl/Cmd+Z undo, +Shift / Ctrl+Y redo.
+  // Track selection so the panels and copy/paste know what's active.
+  const onSelectionChange = useCallback(
+    ({ nodes: selNodes, edges: selEdges }: { nodes: FlowNode[]; edges: FlowEdge[] }) => {
+      selectedNodeIdsRef.current = selNodes.map((n) => n.id)
+      const firstNode = selNodes[0]
+      setSelectedNodeId(firstNode?.id ?? null)
+      setSelectedEntityId(firstNode ? (firstNode.data.entityId ?? null) : null)
+      setSelectedEdgeId(selEdges[0]?.id ?? null)
+    },
+    [],
+  )
+
+  // Copy/paste = placement (§9.3). Copy serializes the selected subgraph to a
+  // clipboard JSON (system clipboard + an in-memory fallback for cross-document);
+  // paste re-places the same entities/relationships as one undoable command.
+  const clipboardRef = useRef<Clipboard | null>(null)
+
+  const copySelection = useCallback(async () => {
+    if (!ids || selectedNodeIdsRef.current.length === 0) return
+    const gw = await getGateway()
+    const board = await gw.getBoard(ids.boardId)
+    const positions = new Map(
+      nodesRef.current.map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
+    )
+    const clipboard = buildClipboard(board, selectedNodeIdsRef.current, positions)
+    clipboardRef.current = clipboard
+    try {
+      await navigator.clipboard?.writeText(serializeClipboard(clipboard))
+    } catch {
+      /* system clipboard may be unavailable; the in-memory copy still works */
+    }
+  }, [ids, getGateway])
+
+  const pasteClipboard = useMutation({
+    mutationFn: async () => {
+      if (!ids) return
+      let clipboard = clipboardRef.current
+      try {
+        const text = await navigator.clipboard?.readText()
+        const parsed = text ? parseClipboard(text) : null
+        if (parsed) clipboard = parsed
+      } catch {
+        /* fall back to the in-memory clipboard */
+      }
+      if (!clipboard || clipboard.nodes.length === 0) return
+      const gw = await getGateway()
+      // Offset the paste so it doesn't land exactly on the originals.
+      return gw.pasteClipboard(ids.boardId, ids.viewId, { clipboard, x: 80, y: 80 })
+    },
+    onSuccess: async () => {
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
+  // Keyboard shortcuts (desktop): Ctrl/Cmd+Z undo, +Shift / Ctrl+Y redo, C copy, V paste.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
@@ -170,11 +332,15 @@ function EditorCanvas() {
       } else if ((key === 'z' && e.shiftKey) || key === 'y') {
         e.preventDefault()
         redo.mutate()
+      } else if (key === 'c') {
+        void copySelection()
+      } else if (key === 'v') {
+        pasteClipboard.mutate()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo])
+  }, [undo, redo, copySelection, pasteClipboard])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -212,6 +378,8 @@ function EditorCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
+        onSelectionChange={onSelectionChange}
         fitView
         proOptions={{ hideAttribution: true }}
       >
@@ -230,6 +398,17 @@ function EditorCanvas() {
               Redo
             </button>
             <span className="toolbar-sep" />
+            <button onClick={() => void copySelection()} disabled={!selectedNodeId} aria-label="Copy">
+              Copy
+            </button>
+            <button
+              onClick={() => pasteClipboard.mutate()}
+              disabled={!ids}
+              aria-label="Paste"
+            >
+              Paste
+            </button>
+            <span className="toolbar-sep" />
             <button onClick={() => save.mutate()} disabled={!ids}>
               Save
             </button>
@@ -242,6 +421,38 @@ function EditorCanvas() {
           </Panel>
         )}
       </ReactFlow>
+
+      {/* Side panels: prototype library + entity properties / cross-reference. */}
+      {ids && (
+        <aside className="side-panels" aria-label="Editor panels">
+          <PrototypePanel
+            graphId={ids.graphId}
+            selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
+            onStampPrototype={(p) => stampPrototype.mutate(p)}
+            onChanged={() => void invalidateDiagram()}
+          />
+          {selectedEntityId && (
+            <EntityPanel
+              key={selectedEntityId}
+              entityId={selectedEntityId}
+              onChanged={() => void invalidateDiagram()}
+            />
+          )}
+        </aside>
+      )}
+
+      {/* Drag-to-create quick-picker (§9.4). */}
+      {pickerCtx && (
+        <QuickPicker
+          entities={pickerCtx.entities}
+          prototypes={pickerCtx.prototypes}
+          onUseExisting={(entityId) => connectToExisting.mutate(entityId)}
+          onCreateNew={(name, prototypeId) => connectToNew.mutate({ name, prototypeId })}
+          onCancel={() => setPickerCtx(null)}
+        />
+      )}
+
       {/* Thumb-reach add control for narrow viewports (mobile baseline). */}
       <button
         className="fab"
