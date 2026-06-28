@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/nodes-plus-edges/',
+  // Must match the GitHub Pages path (repo name) so asset URLs resolve.
+  base: '/nodge/',
   test: {
     environment: 'jsdom',
     globals: true,
