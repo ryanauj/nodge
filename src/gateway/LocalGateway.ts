@@ -9,6 +9,7 @@
 
 import { v4 as uuidv4 } from 'uuid'
 import { CommandBus, command } from '../commands/CommandBus'
+import { OplogSink } from '../commands/oplog'
 import { Repository } from '../db/repository'
 import { LATEST_SQLITE_VERSION, runSqliteMigrations } from '../db/migrations'
 import type { AsyncSqlite } from '../db/sqlite'
@@ -122,15 +123,19 @@ export class LocalGateway implements DataGateway {
   private constructor(
     private readonly db: AsyncSqlite,
     private readonly deps: GatewayDeps,
+    oplog: OplogSink,
   ) {
     this.repo = new Repository(db)
-    this.commands = new CommandBus(this.repo)
+    // Every mutation is journalled into the oplog at the Mutator write seam
+    // (spec §6.3) — additive, so no call site changes. The sync layer reads it.
+    this.commands = new CommandBus(this.repo, { oplog, now: deps.now })
   }
 
   /** Open a gateway over a database, running schema migrations first. */
   static async open(db: AsyncSqlite, deps: GatewayDeps = defaultDeps): Promise<LocalGateway> {
     await runSqliteMigrations(db)
-    return new LocalGateway(db, deps)
+    const oplog = await OplogSink.open(new Repository(db))
+    return new LocalGateway(db, deps, oplog)
   }
 
   private stampNew(): RecordMeta {

@@ -86,6 +86,14 @@ export class Repository {
     return rows.map((row) => rowFromSql(def, row))
   }
 
+  /** The highest value of a single-column integer primary key, or undefined if empty. */
+  async maxSeq(def: TableDef): Promise<number | undefined> {
+    const pk = def.columns[def.primaryKey[0]]
+    const row = await this.db.get(`SELECT MAX(${pk}) AS m FROM ${def.name}`)
+    const value = row?.m
+    return typeof value === 'number' ? value : undefined
+  }
+
   async deleteByKey(def: TableDef, key: KeyValues): Promise<void> {
     const where = this.whereForKey(def, key)
     await this.db.exec(`DELETE FROM ${def.name} WHERE ${where.clause}`, where.values)

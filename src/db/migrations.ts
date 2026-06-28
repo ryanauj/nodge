@@ -7,7 +7,8 @@
  * runner and the DDL can never describe different tables.
  */
 
-import { schemaDdl } from '../model/ddl'
+import { createTableSql, schemaDdl } from '../model/ddl'
+import { oplogTable } from '../model/schema'
 import type { AsyncSqlite } from './sqlite'
 
 export interface SqliteMigration {
@@ -37,6 +38,17 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
       for (const tableName of ['entity', 'node', 'prototype']) {
         await addColumnIfMissing(db, tableName, 'style_profile_id', 'TEXT')
       }
+    },
+  },
+  {
+    // v3 (spec §6.2 "Optional, Phase 6", §6.6): the append-only sync oplog. It is
+    // local journal / sync plumbing — NOT part of the portable document — so it
+    // lives outside ALL_TABLES and is created by this dedicated migration. The
+    // `CREATE TABLE IF NOT EXISTS` is idempotent for both fresh and legacy DBs;
+    // an old OPFS database that predates the oplog simply gains an empty table.
+    version: 3,
+    up: async (db) => {
+      await db.exec(createTableSql(oplogTable))
     },
   },
 ]
