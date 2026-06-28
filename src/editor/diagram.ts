@@ -16,6 +16,7 @@ import type {
 import type { BoardDetail, DataGateway, Uuid } from '../gateway'
 import { DEFAULT_PALETTE_TOKENS, resolveEdgeStyle, resolveNodeStyle } from './style'
 import type { ResolvedEdgeStyle, ResolvedNodeStyle } from './style'
+import { applyFilter } from './filter'
 import type { DiagramIds } from './bootstrap'
 
 /** Everything the transform needs, gathered from getGraph + getBoard. */
@@ -100,12 +101,22 @@ export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<Dia
   const view = board.views.find((v) => v.id === ids.viewId) ?? board.views[0]
   const palette = graph.palettes.find((p) => p.id === (view?.paletteId ?? ids.paletteId))
 
+  const entities = new Map(graph.entities.map((e) => [e.id, e]))
+  const relationships = new Map(graph.relationships.map((r) => [r.id, r]))
+
+  // Apply the view's filter/focus lens (§7.2): an ad-hoc subgraph WITHOUT
+  // changing board membership. An empty/absent filter renders the whole board.
+  const visible = applyFilter(
+    { nodes: board.nodes, edges: board.edges, entities, relationships },
+    view?.filter ?? null,
+  )
+
   const src: DiagramSource = {
-    nodes: board.nodes,
-    edges: board.edges,
+    nodes: visible.nodes,
+    edges: visible.edges,
     positions: positionMap(board, view?.id ?? ids.viewId),
-    entities: new Map(graph.entities.map((e) => [e.id, e])),
-    relationships: new Map(graph.relationships.map((r) => [r.id, r])),
+    entities,
+    relationships,
     prototypes: new Map(graph.prototypes.map((p) => [p.id, p])),
     paletteTokens: palette?.tokens ?? DEFAULT_PALETTE_TOKENS,
   }

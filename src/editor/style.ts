@@ -60,6 +60,61 @@ export const DEFAULT_PALETTE_TOKENS: PaletteTokens = {
 
 export const DEFAULT_PALETTE_NAME = 'Default'
 
+/**
+ * Built-in palette library (spec §8.4 — "built-ins seeded at first run"; Phase 3
+ * is palette *selection* from this library). Each entry is a distinct look made
+ * only of node + edge style tokens; because `diagram.ts` resolves a view's
+ * tokens from its palette and styles are token-referenced, assigning a palette
+ * to a view re-skins everything not pinned. The token-level editor is Phase 4.
+ */
+export interface BuiltinPalette {
+  name: string
+  tokens: PaletteTokens
+}
+
+export const BUILTIN_PALETTES: BuiltinPalette[] = [
+  { name: DEFAULT_PALETTE_NAME, tokens: DEFAULT_PALETTE_TOKENS },
+  {
+    name: 'Midnight',
+    tokens: {
+      node: {
+        surface: '#1f2937',
+        content: '#f9fafb',
+        border: '#60a5fa',
+        borderWidth: 1,
+        shape: 'rounded',
+      },
+      edge: { stroke: '#60a5fa', strokeWidth: 1.5 },
+    },
+  },
+  {
+    name: 'Sunset',
+    tokens: {
+      node: {
+        surface: '#fff7ed',
+        content: '#7c2d12',
+        border: '#fb923c',
+        borderWidth: 2,
+        shape: 'pill',
+      },
+      edge: { stroke: '#ea580c', strokeWidth: 2 },
+    },
+  },
+  {
+    name: 'Forest',
+    tokens: {
+      node: {
+        surface: '#ecfdf5',
+        content: '#064e3b',
+        border: '#10b981',
+        borderWidth: 1,
+        shape: 'rect',
+      },
+      edge: { stroke: '#059669', strokeWidth: 1.5 },
+    },
+  },
+]
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }

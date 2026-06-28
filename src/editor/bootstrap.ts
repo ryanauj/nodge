@@ -9,7 +9,7 @@
 
 import type { DataGateway, Uuid } from '../gateway'
 import { BUILTIN_PROTOTYPES } from './prototypes'
-import { DEFAULT_PALETTE_NAME, DEFAULT_PALETTE_TOKENS } from './style'
+import { BUILTIN_PALETTES } from './style'
 
 /** The handles the canvas needs to read and write the active diagram. */
 export interface DiagramIds {
@@ -35,29 +35,48 @@ function defaultStorage(): PointerStorage | null {
   }
 }
 
-/** Seed a fresh default graph + palette + board + view and return its ids. */
+/**
+ * Seed a fresh default graph and return its ids. Seeds the *library* of built-in
+ * palettes (spec §8.4) — more than one look — plus the built-in prototypes, one
+ * board and one view bound to the default palette.
+ */
 export async function createDefaultDiagram(gw: DataGateway): Promise<DiagramIds> {
   const graph = await gw.createGraph({ name: 'Untitled diagram' })
-  const palette = await gw.createPalette(graph.id, {
-    name: DEFAULT_PALETTE_NAME,
-    tokens: DEFAULT_PALETTE_TOKENS,
-    builtin: true,
-  })
+  let defaultPaletteId: Uuid | null = null
+  for (const builtin of BUILTIN_PALETTES) {
+    const palette = await gw.createPalette(graph.id, {
+      name: builtin.name,
+      tokens: builtin.tokens,
+      builtin: true,
+    })
+    defaultPaletteId ??= palette.id
+  }
   // Seed the built-in prototype library so the tool is useful on first run (§9.1).
   for (const proto of BUILTIN_PROTOTYPES) await gw.createPrototype(graph.id, proto)
   const board = await gw.createBoard(graph.id, { name: 'Board 1' })
-  const view = await gw.createView(board.id, { name: 'View 1', paletteId: palette.id })
-  return { graphId: graph.id, boardId: board.id, viewId: view.id, paletteId: palette.id }
+  const view = await gw.createView(board.id, { name: 'View 1', paletteId: defaultPaletteId })
+  return { graphId: graph.id, boardId: board.id, viewId: view.id, paletteId: defaultPaletteId }
 }
 
-/** Resolve the ids for an existing graph (its first board + view), or null. */
-async function reopen(gw: DataGateway, graphId: Uuid): Promise<DiagramIds | null> {
+/**
+ * Resolve the ids for an existing graph, optionally targeting a specific board
+ * and/or view (for routing, §7). Falls back to the first board/view when the
+ * requested id is missing, so deep links and already-persisted single-board
+ * graphs both resolve. Returns null when the graph has no board/view.
+ */
+export async function reopen(
+  gw: DataGateway,
+  graphId: Uuid,
+  boardId?: Uuid | null,
+  viewId?: Uuid | null,
+): Promise<DiagramIds | null> {
   try {
     const graph = await gw.getGraph(graphId)
-    const board = graph.boards[0]
+    const board =
+      (boardId && graph.boards.find((b) => b.id === boardId)) || graph.boards[0]
     if (!board) return null
     const detail = await gw.getBoard(board.id)
-    const view = detail.views[0]
+    const view = (viewId && detail.views.find((v) => v.id === viewId)) || detail.views[0]
     if (!view) return null
     return {
       graphId: graph.id,

@@ -69,11 +69,45 @@ export function parsePaletteTokens(value: unknown, path: string): PaletteTokens 
   return expectRecord(value, path)
 }
 
-/** Optional filter/focus lens config on a view. */
-export type ViewFilter = Record<string, unknown>
+/**
+ * Optional filter/focus lens config on a view (spec §7.2). A view's filter
+ * narrows the rendered subgraph *without* changing board membership. All fields
+ * are optional and compose (an empty filter shows everything):
+ *
+ *   - `prototypeIds`  — show only nodes whose entity links one of these prototypes.
+ *   - `metadata`      — show only nodes whose entity metadata matches every
+ *                       key/value pair (tag/metadata filter).
+ *   - `focusNodeId`   — anchor for a focus-and-hops lens.
+ *   - `hops`          — show only nodes within N relationship-hops of the focus
+ *                       node (requires `focusNodeId`; 0 = focus only).
+ */
+export interface ViewFilter {
+  prototypeIds?: string[]
+  metadata?: Record<string, unknown>
+  focusNodeId?: string
+  hops?: number
+}
+
+function expectStringArray(value: unknown, path: string): string[] {
+  return expectArray(value, path).map((item, i) => expectString(item, `${path}[${i}]`))
+}
 
 export function parseViewFilter(value: unknown, path: string): ViewFilter {
-  return expectRecord(value, path)
+  const record = expectRecord(value, path)
+  const filter: ViewFilter = {}
+  if (record.prototypeIds !== undefined) {
+    filter.prototypeIds = expectStringArray(record.prototypeIds, `${path}.prototypeIds`)
+  }
+  if (record.metadata !== undefined) {
+    filter.metadata = expectRecord(record.metadata, `${path}.metadata`)
+  }
+  if (record.focusNodeId !== undefined) {
+    filter.focusNodeId = expectString(record.focusNodeId, `${path}.focusNodeId`)
+  }
+  if (record.hops !== undefined) {
+    filter.hops = expectNumber(record.hops, `${path}.hops`)
+  }
+  return filter
 }
 
 /** Saved pan/zoom for a view. */
