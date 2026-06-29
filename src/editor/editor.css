@@ -286,6 +286,65 @@
   box-shadow: 0 0 0 1px var(--nodge-border-focus, #4361ee) inset;
 }
 
+/* ── Phase 7a: style-panel "Refresh from prototype" + split prototype libraries.
+   Every new/changed control is a ≥44px tap target (spec §10.2). The disabled
+   refresh button stays programmatically disabled (the .panel button:disabled
+   rule above only dims it). No hover-only affordances. ── */
+.refresh-proto-btn {
+  min-height: 44px;
+  width: 100%;
+}
+
+/* The two prototype libraries (Node / Edge) as a WAI-ARIA tablist. Each tab is a
+   ≥44px target; the selected tab carries the focus ring color so the active
+   library is obvious without relying on hover. */
+.proto-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.proto-tab {
+  flex: 1;
+  min-height: 44px;
+  padding: 7px;
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.18));
+  border-radius: 6px;
+  background: var(--nodge-surface-sunken, #f4f4f6);
+  color: inherit;
+  cursor: pointer;
+}
+
+.proto-tab.active {
+  font-weight: 600;
+  border-color: var(--nodge-border-focus, #4361ee);
+  box-shadow: 0 0 0 1px var(--nodge-border-focus, #4361ee) inset;
+}
+
+/* Prototype list rows + their action buttons are ≥44px tap targets and wrap so
+   they never overflow a 320px-wide panel. */
+.panel-list[aria-label$='prototypes'] .panel-list-item {
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+
+.proto-name {
+  flex: 1 1 100%;
+  font-size: 12px;
+}
+
+.proto-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.proto-buttons button,
+.panel-actions .refresh-proto-btn,
+.panel-actions button {
+  min-height: 44px;
+}
+
 .palette-warnings {
   margin: 6px 0;
   padding: 6px 8px;

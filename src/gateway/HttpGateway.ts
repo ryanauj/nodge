@@ -42,6 +42,7 @@ import type {
   DiagramDetail,
   DiagramInput,
   DiagramPatch,
+  EdgeDetail,
   EdgeInput,
   EdgePatch,
   EntityInput,
@@ -53,6 +54,7 @@ import type {
   GenerateLayoutOptions,
   LayoutInput,
   LayoutPatch,
+  NodeDetail,
   NodeInput,
   NodePatch,
   NodePositionInput,
@@ -157,6 +159,9 @@ export class HttpGateway implements DataGateway {
   createNode(diagramId: Uuid, input: NodeInput): Promise<Node> {
     return this.local.createNode(diagramId, input)
   }
+  getNode(id: Uuid): Promise<NodeDetail> {
+    return this.local.getNode(id)
+  }
   updateNode(id: Uuid, patch: NodePatch): Promise<Node> {
     return this.local.updateNode(id, patch)
   }
@@ -165,6 +170,9 @@ export class HttpGateway implements DataGateway {
   }
   createEdge(diagramId: Uuid, input: EdgeInput): Promise<Edge> {
     return this.local.createEdge(diagramId, input)
+  }
+  getEdge(id: Uuid): Promise<EdgeDetail> {
+    return this.local.getEdge(id)
   }
   updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge> {
     return this.local.updateEdge(id, patch)

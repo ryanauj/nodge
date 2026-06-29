@@ -53,6 +53,7 @@ import type {
   DiagramDetail,
   DiagramInput,
   DiagramPatch,
+  EdgeDetail,
   EdgeInput,
   EdgePatch,
   EntityInput,
@@ -69,6 +70,7 @@ import type {
   LayoutDetail,
   LayoutInput,
   LayoutPatch,
+  NodeDetail,
   NodeInput,
   NodePatch,
   NodePositionInput,
@@ -316,6 +318,18 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(command('createNode', (m) => m.insert(nodeTable, node)))
   }
 
+  /**
+   * Read one node placement by id, enriched with the `nodePrototypeId` of its
+   * base entity (§D4). The style panel uses this to read the row's full `style`
+   * (its pin state) and to know whether "Refresh from prototype" has a prototype
+   * to refresh from — without the old O(graphs×diagrams) scan.
+   */
+  async getNode(id: Uuid): Promise<NodeDetail> {
+    const node = await this.require(await this.repo.getById(nodeTable, id), 'node', id)
+    const entity = await this.repo.getById(entityTable, node.entityId)
+    return { ...node, nodePrototypeId: entity?.nodePrototypeId ?? null }
+  }
+
   async updateNode(id: Uuid, patch: NodePatch): Promise<Node> {
     const current = await this.require(await this.repo.getById(nodeTable, id), 'node', id)
     const updated = this.bumpVersion(applyPatch(current, patch))
@@ -347,6 +361,16 @@ export class LocalGateway implements DataGateway {
    * removes the key so the value follows the palette again. Routed through the
    * command bus as one undoable command, exactly like `updateNode`.
    */
+  /**
+   * Read one edge placement by id, enriched with the `edgePrototypeId` of its
+   * base relationship (§D4) — the edge-style mirror of {@link getNode}.
+   */
+  async getEdge(id: Uuid): Promise<EdgeDetail> {
+    const edge = await this.require(await this.repo.getById(edgeTable, id), 'edge', id)
+    const rel = await this.repo.getById(relationshipTable, edge.relationshipId)
+    return { ...edge, edgePrototypeId: rel?.edgePrototypeId ?? null }
+  }
+
   async updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge> {
     const current = await this.require(await this.repo.getById(edgeTable, id), 'edge', id)
     const updated = this.bumpVersion(applyPatch(current, patch))

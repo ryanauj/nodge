@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { PrototypePanel } from './PrototypePanel'
 import { renderWithGateway } from './panelTestUtils'
@@ -14,42 +14,96 @@ async function seed(gw: LocalGateway) {
   return { graphId: graph.id, diagramId: diagram.id }
 }
 
-describe('PrototypePanel (§9.1)', () => {
-  it('lists prototypes and filters by search', async () => {
+function renderPanel(
+  gw: LocalGateway,
+  graphId: string,
+  diagramId: string,
+  overrides: Partial<{
+    selectedNodeId: string | null
+    selectedEdgeId: string | null
+    onStampPrototype: (p: unknown) => void
+    onChanged: () => void
+  }> = {},
+) {
+  return renderWithGateway(
+    <PrototypePanel
+      graphId={graphId}
+      diagramId={diagramId}
+      selectedNodeId={overrides.selectedNodeId ?? null}
+      selectedEdgeId={overrides.selectedEdgeId ?? null}
+      onStampPrototype={overrides.onStampPrototype ?? vi.fn()}
+      onChanged={overrides.onChanged ?? vi.fn()}
+    />,
+    gw,
+  )
+}
+
+describe('PrototypePanel — two libraries (§10 / D4)', () => {
+  it('renders node and edge prototypes in separate libraries, filtered by kind', async () => {
     const gw = await createMemoryGateway()
     const { graphId, diagramId } = await seed(gw)
-    renderWithGateway(
-      <PrototypePanel
-        graphId={graphId}
-        diagramId={diagramId}
-        selectedNodeId={null}
-        selectedEdgeId={null}
-        onStampPrototype={vi.fn()}
-        onChanged={vi.fn()}
-      />,
-      gw,
-    )
-    expect(await screen.findByText(/Service/)).toBeInTheDocument()
-    expect(screen.getByText(/Calls/)).toBeInTheDocument()
+    renderPanel(gw, graphId, diagramId)
+
+    // The Node library is active by default: Service shows, Calls (edge) does not.
+    expect(await screen.findByText('Service')).toBeInTheDocument()
+    expect(screen.queryByText('Calls')).not.toBeInTheDocument()
+
+    // Switch to the Edge library: Calls shows, Service does not.
+    fireEvent.click(screen.getByRole('tab', { name: 'Edge prototypes' }))
+    expect(await screen.findByText('Calls')).toBeInTheDocument()
+    expect(screen.queryByText('Service')).not.toBeInTheDocument()
+  })
+
+  it('the tablist supports the full keyboard pattern (Arrow/Home/End switch + move focus)', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId } = await seed(gw)
+    renderPanel(gw, graphId, diagramId)
+
+    const nodeTab = await screen.findByRole('tab', { name: 'Node prototypes' })
+    const edgeTab = screen.getByRole('tab', { name: 'Edge prototypes' })
+
+    nodeTab.focus()
+    expect(nodeTab).toHaveFocus()
+    expect(nodeTab).toHaveAttribute('aria-selected', 'true')
+
+    // ArrowRight selects + focuses the edge library.
+    fireEvent.keyDown(nodeTab, { key: 'ArrowRight' })
+    expect(edgeTab).toHaveFocus()
+    expect(edgeTab).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('Calls')).toBeInTheDocument()
+
+    // Home returns to the first (node) library, focus and selection together.
+    fireEvent.keyDown(edgeTab, { key: 'Home' })
+    expect(nodeTab).toHaveFocus()
+    expect(await screen.findByText('Service')).toBeInTheDocument()
+
+    // End jumps to the last (edge) library.
+    fireEvent.keyDown(nodeTab, { key: 'End' })
+    expect(edgeTab).toHaveFocus()
+
+    // Roving tabindex: only the selected tab is in the Tab order.
+    expect(edgeTab).toHaveAttribute('tabindex', '0')
+    expect(nodeTab).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('filters within the active library by search', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId } = await seed(gw)
+    await gw.createPrototype(graphId, { kind: 'node', name: 'Database' })
+    renderPanel(gw, graphId, diagramId)
+
+    expect(await screen.findByText('Service')).toBeInTheDocument()
+    expect(screen.getByText('Database')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Search prototypes'), { target: { value: 'serv' } })
-    expect(screen.queryByText(/Calls/)).not.toBeInTheDocument()
+    expect(screen.getByText('Service')).toBeInTheDocument()
+    expect(screen.queryByText('Database')).not.toBeInTheDocument()
   })
 
   it('duplicates a prototype through the gateway', async () => {
     const gw = await createMemoryGateway()
     const { graphId, diagramId } = await seed(gw)
     const onChanged = vi.fn()
-    renderWithGateway(
-      <PrototypePanel
-        graphId={graphId}
-        diagramId={diagramId}
-        selectedNodeId={null}
-        selectedEdgeId={null}
-        onStampPrototype={vi.fn()}
-        onChanged={onChanged}
-      />,
-      gw,
-    )
+    renderPanel(gw, graphId, diagramId, { onChanged })
     fireEvent.click(await screen.findByRole('button', { name: 'Duplicate Service' }))
     await waitFor(async () => {
       const protos = await gw.listPrototypes(graphId)
@@ -62,40 +116,30 @@ describe('PrototypePanel (§9.1)', () => {
     const gw = await createMemoryGateway()
     const { graphId, diagramId } = await seed(gw)
     const onStamp = vi.fn()
-    renderWithGateway(
-      <PrototypePanel
-        graphId={graphId}
-        diagramId={diagramId}
-        selectedNodeId={null}
-        selectedEdgeId={null}
-        onStampPrototype={onStamp}
-        onChanged={vi.fn()}
-      />,
-      gw,
-    )
+    renderPanel(gw, graphId, diagramId, { onStampPrototype: onStamp })
     fireEvent.click(await screen.findByRole('button', { name: 'Create from Service' }))
     expect(onStamp).toHaveBeenCalledWith(expect.objectContaining({ name: 'Service' }))
   })
 
-  it('"Refresh all" calls the gateway scoped to the active diagram', async () => {
+  it('"Refresh all" calls the gateway scoped to the active diagram, per library', async () => {
     const gw = await createMemoryGateway()
     const { graphId, diagramId } = await seed(gw)
     const spy = vi.spyOn(gw, 'refreshFromPrototype')
     const service = (await gw.listPrototypes(graphId)).find((p) => p.name === 'Service')!
-    renderWithGateway(
-      <PrototypePanel
-        graphId={graphId}
-        diagramId={diagramId}
-        selectedNodeId={null}
-        selectedEdgeId={null}
-        onStampPrototype={vi.fn()}
-        onChanged={vi.fn()}
-      />,
-      gw,
-    )
+    const calls = (await gw.listPrototypes(graphId)).find((p) => p.name === 'Calls')!
+    renderPanel(gw, graphId, diagramId)
+
+    // Node library refresh.
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh all of Service' }))
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith({ prototypeId: service.id, all: true, diagramId })
+    })
+
+    // Edge library refresh.
+    fireEvent.click(screen.getByRole('tab', { name: 'Edge prototypes' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh all of Calls' }))
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith({ prototypeId: calls.id, all: true, diagramId })
     })
   })
 
@@ -107,22 +151,21 @@ describe('PrototypePanel (§9.1)', () => {
     const added = await gw.addNode(diagram.id, layout.id, { name: 'My Node', x: 0, y: 0 })
 
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Saved Proto')
-    renderWithGateway(
-      <PrototypePanel
-        graphId={graph.id}
-        diagramId={diagram.id}
-        selectedNodeId={added.node.id}
-        selectedEdgeId={null}
-        onStampPrototype={vi.fn()}
-        onChanged={vi.fn()}
-      />,
-      gw,
-    )
+    renderPanel(gw, graph.id, diagram.id, { selectedNodeId: added.node.id })
     fireEvent.click(await screen.findByRole('button', { name: 'Save node as prototype' }))
     await waitFor(async () => {
       const protos = await gw.listPrototypes(graph.id)
       expect(protos.some((p) => p.name === 'Saved Proto')).toBe(true)
     })
     promptSpy.mockRestore()
+  })
+
+  it('the active library list is labelled by kind', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId } = await seed(gw)
+    renderPanel(gw, graphId, diagramId)
+    await screen.findByText('Service')
+    const nodeList = screen.getByRole('list', { name: 'Node prototypes' })
+    expect(within(nodeList).getByText('Service')).toBeInTheDocument()
   })
 })
