@@ -7,18 +7,21 @@ import type { LocalGateway } from '../../gateway/LocalGateway'
 
 async function seed(gw: LocalGateway) {
   const graph = await gw.createGraph({ name: 'G' })
+  const diagram = await gw.createDiagram(graph.id, { name: 'D' })
+  await gw.createLayout(diagram.id, { name: 'L' })
   await gw.createPrototype(graph.id, { kind: 'node', name: 'Service' })
   await gw.createPrototype(graph.id, { kind: 'edge', name: 'Calls' })
-  return graph.id
+  return { graphId: graph.id, diagramId: diagram.id }
 }
 
 describe('PrototypePanel (§9.1)', () => {
   it('lists prototypes and filters by search', async () => {
     const gw = await createMemoryGateway()
-    const graphId = await seed(gw)
+    const { graphId, diagramId } = await seed(gw)
     renderWithGateway(
       <PrototypePanel
         graphId={graphId}
+        diagramId={diagramId}
         selectedNodeId={null}
         selectedEdgeId={null}
         onStampPrototype={vi.fn()}
@@ -34,11 +37,12 @@ describe('PrototypePanel (§9.1)', () => {
 
   it('duplicates a prototype through the gateway', async () => {
     const gw = await createMemoryGateway()
-    const graphId = await seed(gw)
+    const { graphId, diagramId } = await seed(gw)
     const onChanged = vi.fn()
     renderWithGateway(
       <PrototypePanel
         graphId={graphId}
+        diagramId={diagramId}
         selectedNodeId={null}
         selectedEdgeId={null}
         onStampPrototype={vi.fn()}
@@ -56,11 +60,12 @@ describe('PrototypePanel (§9.1)', () => {
 
   it('stamps a node prototype via the onStampPrototype callback', async () => {
     const gw = await createMemoryGateway()
-    const graphId = await seed(gw)
+    const { graphId, diagramId } = await seed(gw)
     const onStamp = vi.fn()
     renderWithGateway(
       <PrototypePanel
         graphId={graphId}
+        diagramId={diagramId}
         selectedNodeId={null}
         selectedEdgeId={null}
         onStampPrototype={onStamp}
@@ -70,6 +75,28 @@ describe('PrototypePanel (§9.1)', () => {
     )
     fireEvent.click(await screen.findByRole('button', { name: 'Create from Service' }))
     expect(onStamp).toHaveBeenCalledWith(expect.objectContaining({ name: 'Service' }))
+  })
+
+  it('"Refresh all" calls the gateway scoped to the active diagram', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId } = await seed(gw)
+    const spy = vi.spyOn(gw, 'refreshFromPrototype')
+    const service = (await gw.listPrototypes(graphId)).find((p) => p.name === 'Service')!
+    renderWithGateway(
+      <PrototypePanel
+        graphId={graphId}
+        diagramId={diagramId}
+        selectedNodeId={null}
+        selectedEdgeId={null}
+        onStampPrototype={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+      gw,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh all of Service' }))
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith({ prototypeId: service.id, all: true, diagramId })
+    })
   })
 
   it('saves a selected node as a prototype', async () => {
@@ -83,6 +110,7 @@ describe('PrototypePanel (§9.1)', () => {
     renderWithGateway(
       <PrototypePanel
         graphId={graph.id}
+        diagramId={diagram.id}
         selectedNodeId={added.node.id}
         selectedEdgeId={null}
         onStampPrototype={vi.fn()}

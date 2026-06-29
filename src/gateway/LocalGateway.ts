@@ -960,23 +960,23 @@ export class LocalGateway implements DataGateway {
       'prototype',
       input.prototypeId,
     )
-    if (input.all && !input.diagramId) {
+    const { all, diagramId, ids } = input
+    if (all && !diagramId) {
       throw new Error('refreshFromPrototype({ all: true }) requires a diagramId (§7/D1)')
     }
-    // `all` is diagram-scoped (guarded above, so non-undefined here).
-    const scopeDiagramId = input.diagramId as Uuid
     if (proto.kind === 'node') {
       const entities = (await this.repo.list(entityTable, { graphId: proto.graphId })).filter(
         (e) => e.nodePrototypeId === proto.id,
       )
       const entityIds = new Set(entities.map((e) => e.id))
-      // `all` is diagram-scoped; `ids` operates on the named placements directly.
-      const candidates = input.all
-        ? await this.repo.list(nodeTable, { diagramId: scopeDiagramId })
-        : await this.repo.list(nodeTable)
-      const targets = input.all
-        ? candidates.filter((n) => entityIds.has(n.entityId))
-        : candidates.filter((n) => (input.ids ?? []).includes(n.id))
+      // `all` is diagram-scoped (diagramId guaranteed present by the guard above);
+      // `ids` operates on the named placements directly, regardless of diagram.
+      const targets =
+        all && diagramId
+          ? (await this.repo.list(nodeTable, { diagramId })).filter((n) =>
+              entityIds.has(n.entityId),
+            )
+          : (await this.repo.list(nodeTable)).filter((n) => (ids ?? []).includes(n.id))
       const updated = targets.map((n) =>
         this.bumpVersion({ ...n, style: { ...proto.style } }),
       )
@@ -992,12 +992,12 @@ export class LocalGateway implements DataGateway {
       await this.repo.list(relationshipTable, { graphId: proto.graphId })
     ).filter((r) => r.edgePrototypeId === proto.id)
     const relIds = new Set(relationships.map((r) => r.id))
-    const candidates = input.all
-      ? await this.repo.list(edgeTable, { diagramId: scopeDiagramId })
-      : await this.repo.list(edgeTable)
-    const targets = input.all
-      ? candidates.filter((e) => relIds.has(e.relationshipId))
-      : candidates.filter((e) => (input.ids ?? []).includes(e.id))
+    const targets =
+      all && diagramId
+        ? (await this.repo.list(edgeTable, { diagramId })).filter((e) =>
+            relIds.has(e.relationshipId),
+          )
+        : (await this.repo.list(edgeTable)).filter((e) => (ids ?? []).includes(e.id))
     const updated = targets.map((e) => this.bumpVersion({ ...e, style: { ...proto.style } }))
     await this.commands.execute(
       command('refreshFromPrototype', async (m) => {
