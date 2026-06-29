@@ -26,16 +26,15 @@ async function buildSampleGraph(gw: LocalGateway) {
     metadata: { tier: 'backend' },
     linkScaffold: [{ id: 'l0', kind: 'url', target: 'https://x', label: 'docs' }],
   })
-  const palette = await gw.createPalette(graph.id, {
+  await gw.createPalette(graph.id, {
     name: 'Default',
     tokens: { surface: '#fff' },
     builtin: true,
   })
-  await gw.createStyleProfile(graph.id, { name: 'Bold', target: 'node', style: { weight: 700 } })
 
   const a = await gw.createEntity(graph.id, {
     name: 'A',
-    prototypeId: proto.id,
+    nodePrototypeId: proto.id,
     links: [{ id: 'lnk1', kind: 'url', target: 'https://a', label: 'A' }],
     metadata: { k: 'v' },
   })
@@ -47,21 +46,20 @@ async function buildSampleGraph(gw: LocalGateway) {
     directed: true,
   })
 
-  const board = await gw.createBoard(graph.id, { name: 'Board 1' })
-  const n1 = await gw.createNode(board.id, { entityId: a.id, label: 'A node' })
-  const n2 = await gw.createNode(board.id, { entityId: b.id, label: 'B node' })
-  await gw.createEdge(board.id, {
+  const diagram = await gw.createDiagram(graph.id, { name: 'Diagram 1' })
+  const n1 = await gw.createNode(diagram.id, { entityId: a.id, label: 'A node' })
+  const n2 = await gw.createNode(diagram.id, { entityId: b.id, label: 'B node' })
+  await gw.createEdge(diagram.id, {
     relationshipId: rel.id,
     sourceNodeId: n1.id,
     targetNodeId: n2.id,
     label: 'calls',
   })
-  const view = await gw.createView(board.id, {
-    name: 'View 1',
-    paletteId: palette.id,
+  const layout = await gw.createLayout(diagram.id, {
+    name: 'Layout 1',
     viewport: { x: 0, y: 0, zoom: 1 },
   })
-  await gw.bulkUpsertPositions(view.id, [
+  await gw.bulkUpsertPositions(layout.id, [
     { nodeId: n1.id, x: 10, y: 20 },
     { nodeId: n2.id, x: 30, y: 40 },
   ])
@@ -153,7 +151,7 @@ describe('LocalGateway — command layer', () => {
 })
 
 describe('LocalGateway — migrations', () => {
-  it('imports an older schemaVersion document and upgrades it', async () => {
+  it('rejects a pre-v3 document (the v3 model refactor is a clean break, §D11)', async () => {
     const legacy = {
       schemaVersion: 0,
       graph: {
@@ -167,20 +165,40 @@ describe('LocalGateway — migrations', () => {
       relationships: [],
       prototypes: [],
       boards: [],
-      // palettes / styleProfiles intentionally absent — migration must fill them
     }
 
     const gw = await createMemoryGateway()
-    const graph = await gw.importJson(legacy as unknown as NodgeDocument)
+    await expect(gw.importJson(legacy as unknown as NodgeDocument)).rejects.toThrow(
+      /No migration registered from schemaVersion 0/,
+    )
+  })
 
-    expect(graph.schemaVersion).toBe(1)
+  it('imports a current-version document and stamps it at the current format version', async () => {
+    const doc: NodgeDocument = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      graph: {
+        id: 'g',
+        name: 'Fresh',
+        description: '',
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        version: 1,
+      },
+      entities: [],
+      relationships: [],
+      prototypes: [],
+      diagrams: [],
+      palettes: [],
+    }
+
+    const gw = await createMemoryGateway()
+    const graph = await gw.importJson(doc)
     expect(graph.description).toBe('')
 
-    const doc = await gw.exportJson(graph.id)
-    // The document is stamped at the current format version (the migration chain
-    // upgraded the legacy v0 doc forward), with the now-required collections filled.
-    expect(doc.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(doc.palettes).toEqual([])
-    expect(doc.styleProfiles).toEqual([])
+    const out = await gw.exportJson(graph.id)
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(out.palettes).toEqual([])
+    expect(out.diagrams).toEqual([])
   })
 })

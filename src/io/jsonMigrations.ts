@@ -5,6 +5,11 @@
  * upgrade cleanly to the current shape. Each step transforms a document one
  * version forward; the runner applies steps until the document reaches
  * {@link CURRENT_SCHEMA_VERSION}.
+ *
+ * The v3 model refactor (Diagram/Layout, dropped StyleProfiles) is a **clean
+ * break** (§D11): no migration is written from the pre-v3 shape, so documents
+ * authored before v3 have no registered step and are rejected — first here (no
+ * migration registered) or, if hand-bumped, by `validateDocument`.
  */
 
 import { CURRENT_SCHEMA_VERSION } from '../model/document'
@@ -13,51 +18,10 @@ import { CURRENT_SCHEMA_VERSION } from '../model/document'
 export type JsonMigration = (doc: Record<string, unknown>) => Record<string, unknown>
 
 /**
- * Steps keyed by the version they upgrade *from*. `MIGRATIONS[0]` turns a v0
- * document into a v1 document, and so on.
- *
- * v0 → v1: the earliest documents predate the top-level `boards`/`palettes`/
- * `styleProfiles` collections and the per-graph `description`. The step fills in
- * the now-required empty collections and defaults so the v1 validator accepts it.
- *
- * v1 → v2: nodes/entities/prototypes gained a nullable `styleProfileId` (§8.3 —
- * a referenced shared look). The step backfills the field with `null` on every
- * such row so a v1 document loads unchanged and renders identically.
+ * Steps keyed by the version they upgrade *from*. There are no pre-v3 steps
+ * (clean break, §D11): pre-v3 documents are intentionally not upgradeable.
  */
-const backfillStyleProfileId = (row: unknown): Record<string, unknown> => {
-  const r = { ...(row as Record<string, unknown>) }
-  if (!('styleProfileId' in r)) r.styleProfileId = null
-  return r
-}
-
-export const JSON_MIGRATIONS: Readonly<Record<number, JsonMigration>> = {
-  0: (doc) => {
-    const graph = { ...(doc.graph as Record<string, unknown> | undefined) }
-    if (typeof graph.description !== 'string') graph.description = ''
-    if (typeof graph.schemaVersion !== 'number') graph.schemaVersion = 1
-    return {
-      ...doc,
-      schemaVersion: 1,
-      graph,
-      entities: doc.entities ?? [],
-      relationships: doc.relationships ?? [],
-      prototypes: doc.prototypes ?? [],
-      boards: doc.boards ?? [],
-      palettes: doc.palettes ?? [],
-      styleProfiles: doc.styleProfiles ?? [],
-    }
-  },
-  1: (doc) => {
-    const entities = ((doc.entities as unknown[]) ?? []).map(backfillStyleProfileId)
-    const prototypes = ((doc.prototypes as unknown[]) ?? []).map(backfillStyleProfileId)
-    const boards = ((doc.boards as unknown[]) ?? []).map((board) => {
-      const b = { ...(board as Record<string, unknown>) }
-      b.nodes = ((b.nodes as unknown[]) ?? []).map(backfillStyleProfileId)
-      return b
-    })
-    return { ...doc, schemaVersion: 2, entities, prototypes, boards }
-  },
-}
+export const JSON_MIGRATIONS: Readonly<Record<number, JsonMigration>> = {}
 
 /**
  * Apply the migration chain to an arbitrary parsed document. Returns a document

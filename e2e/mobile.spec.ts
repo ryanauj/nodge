@@ -76,19 +76,7 @@ test('mobile touch model: switch mode, add + connect via taps, sheet, reload', a
   const sheet = page.getByRole('dialog', { name: 'Palette' })
   await expect(sheet).toBeVisible()
   // The side-panel column is hidden on mobile; the sheet hosts the panels.
-  await expect(sheet.getByRole('region', { name: 'Boards and views' })).toBeVisible()
-
-  // Style/switch-view from the sheet: swap the per-view palette → the nodes
-  // re-skin (the Midnight surface #1f2937 → rgb(31, 41, 55)).
-  await sheet.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
-  await expect
-    .poll(() =>
-      page
-        .locator('.nodge-node')
-        .first()
-        .evaluate((el) => getComputedStyle(el).backgroundColor),
-    )
-    .toBe('rgb(31, 41, 55)')
+  await expect(sheet.getByRole('region', { name: 'Diagrams and layouts' })).toBeVisible()
 
   await sheet.getByRole('button', { name: 'Close Palette' }).tap()
   await expect(page.getByRole('dialog', { name: 'Palette' })).toHaveCount(0)

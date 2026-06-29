@@ -71,7 +71,6 @@ import { BoardViewBar } from './panels/BoardViewBar'
 import { EntityPanel } from './panels/EntityPanel'
 import { PaletteSwitcher } from './panels/PaletteSwitcher'
 import { PaletteEditor } from './panels/PaletteEditor'
-import { StyleProfilePanel } from './panels/StyleProfilePanel'
 import { NodeStylePanel } from './panels/NodeStylePanel'
 import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
@@ -82,15 +81,18 @@ import { toolModeFlowProps, useToolMode, SHEET_LABELS, type SheetKey } from './t
 import { useCanvasPrefs } from './canvasPrefs'
 import './editor.css'
 
-/** Build the board/view URL the router reflects the active diagram into. */
-function diagramPath(boardId: string, viewId: string): string {
-  return `/board/${boardId}/view/${viewId}`
+/** Build the diagram/layout URL the router reflects the active diagram into. */
+function diagramPath(diagramId: string, layoutId: string): string {
+  return `/diagram/${diagramId}/layout/${layoutId}`
 }
 
-/** Parse the active board/view ids out of a `/board/:boardId/view/:viewId` path. */
-function parseDiagramPath(pathname: string): { boardId: string | null; viewId: string | null } {
-  const m = pathname.match(/\/board\/([^/]+)\/view\/([^/]+)/)
-  return m ? { boardId: m[1], viewId: m[2] } : { boardId: null, viewId: null }
+/** Parse the active diagram/layout ids out of a `/diagram/:diagramId/layout/:layoutId` path. */
+function parseDiagramPath(pathname: string): {
+  diagramId: string | null
+  layoutId: string | null
+} {
+  const m = pathname.match(/\/diagram\/([^/]+)\/layout\/([^/]+)/)
+  return m ? { diagramId: m[1], layoutId: m[2] } : { diagramId: null, layoutId: null }
 }
 
 const POSITION_FLUSH_MS = 250
@@ -103,7 +105,7 @@ function EditorCanvas() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { boardId: routeBoardId, viewId: routeViewId } = parseDiagramPath(pathname)
+  const { diagramId: routeDiagramId, layoutId: routeLayoutId } = parseDiagramPath(pathname)
 
   // Bootstrap resolves the *active graph* (from the localStorage pointer, or by
   // seeding a default graph on first run) and a fallback board/view.
@@ -117,10 +119,10 @@ function EditorCanvas() {
   // Resolve the active board/view from the URL (or the bootstrap fallback),
   // tolerating stale ids. Re-runs whenever the route changes.
   const resolved = useQuery<DiagramIds | null>({
-    queryKey: ['resolved', graphId, routeBoardId, routeViewId],
+    queryKey: ['resolved', graphId, routeDiagramId, routeLayoutId],
     queryFn: async () => {
       const gw = await getGateway()
-      const ids = await reopen(gw, graphId!, routeBoardId, routeViewId)
+      const ids = await reopen(gw, graphId!, routeDiagramId, routeLayoutId)
       return ids ?? bootstrap.data ?? null
     },
     enabled: !!graphId,
@@ -136,19 +138,19 @@ function EditorCanvas() {
   // board/view when an id is stale — so this never fights user navigation.
   useEffect(() => {
     if (!ids) return
-    if (!routeBoardId || !routeViewId) {
-      navigate(diagramPath(ids.boardId, ids.viewId), { replace: true })
+    if (!routeDiagramId || !routeLayoutId) {
+      navigate(diagramPath(ids.diagramId, ids.layoutId), { replace: true })
     }
-  }, [ids, routeBoardId, routeViewId, navigate])
+  }, [ids, routeDiagramId, routeLayoutId, navigate])
 
   // The canvas is "ready" once the URL reflects the resolved board/view (the
   // initial `/`→board/view redirect has settled). Gating interaction on this
   // means add/connect gestures never overlap the pending redirect/resolution.
   const ready =
-    !!ids && ids.boardId === routeBoardId && ids.viewId === routeViewId
+    !!ids && ids.diagramId === routeDiagramId && ids.layoutId === routeLayoutId
 
   const diagram = useQuery({
-    queryKey: ['diagram', ids?.graphId, ids?.boardId, ids?.viewId],
+    queryKey: ['diagram', ids?.graphId, ids?.diagramId, ids?.layoutId],
     queryFn: async () => loadDiagram(await getGateway(), ids!),
     enabled: !!ids,
   })
@@ -199,13 +201,13 @@ function EditorCanvas() {
     if (!ids) return
     const vp = getViewport()
     const gw = await getGateway()
-    await gw.updateView(ids.viewId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } })
+    await gw.updateLayout(ids.layoutId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } })
   }, [ids, getGateway, getViewport])
 
   const navigateTo = useCallback(
-    async (boardId: string, viewId: string) => {
+    async (diagramId: string, layoutId: string) => {
       await persistViewport()
-      navigate(diagramPath(boardId, viewId))
+      navigate(diagramPath(diagramId, layoutId))
     },
     [persistViewport, navigate],
   )
@@ -229,27 +231,14 @@ function EditorCanvas() {
   const restoredViewRef = useRef<string | null>(null)
   useEffect(() => {
     const snap = diagram.data
-    if (!snap || snap.ids.viewId === restoredViewRef.current) return
-    restoredViewRef.current = snap.ids.viewId
+    if (!snap || snap.ids.layoutId === restoredViewRef.current) return
+    restoredViewRef.current = snap.ids.layoutId
     if (snap.viewport) void setViewport(snap.viewport)
   }, [diagram.data, setViewport])
 
   const invalidateDiagram = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['diagram'] }),
     [queryClient],
-  )
-
-  // Assign a palette to the active view (spec §8.4) — the canvas PaletteRoot
-  // boundary. Same path as the switcher, re-skinning everything not pinned.
-  const assignViewPalette = useCallback(
-    async (paletteId: string) => {
-      if (!ids) return
-      const gw = await getGateway()
-      await gw.updateView(ids.viewId, { paletteId })
-      await queryClient.invalidateQueries({ queryKey: ['resolved'] })
-      await invalidateDiagram()
-    },
-    [ids, getGateway, queryClient, invalidateDiagram],
   )
 
   // Apply a palette as the app-chrome theme (spec §8.4) — the second PaletteRoot
@@ -270,7 +259,7 @@ function EditorCanvas() {
       // Spread placements clear of the top-left toolbar / edge chrome.
       const x = 250 + (count % 5) * 180
       const y = 200 + Math.floor(count / 5) * 120
-      return gw.addNode(ids!.boardId, ids!.viewId, { name: `Node ${count + 1}`, x, y })
+      return gw.addNode(ids!.diagramId, ids!.layoutId, { name: `Node ${count + 1}`, x, y })
     },
     onSuccess: invalidateDiagram,
   })
@@ -280,7 +269,7 @@ function EditorCanvas() {
     mutationFn: async ({ x, y }: { x: number; y: number }) => {
       const gw = await getGateway()
       const count = nodesRef.current.length
-      return gw.addNode(ids!.boardId, ids!.viewId, { name: `Node ${count + 1}`, x, y })
+      return gw.addNode(ids!.diagramId, ids!.layoutId, { name: `Node ${count + 1}`, x, y })
     },
     onSuccess: async () => {
       await invalidateDiagram()
@@ -291,7 +280,7 @@ function EditorCanvas() {
   const connect = useMutation({
     mutationFn: async (connection: Connection) => {
       const gw = await getGateway()
-      return gw.connectNodes(ids!.boardId, {
+      return gw.connectNodes(ids!.diagramId, {
         sourceNodeId: connection.source,
         targetNodeId: connection.target,
         sourceHandle: connection.sourceHandle ?? null,
@@ -377,7 +366,7 @@ function EditorCanvas() {
   const connectToExisting = useMutation({
     mutationFn: async (entityId: string) => {
       const gw = await getGateway()
-      return gw.connectToExistingEntity(ids!.boardId, ids!.viewId, {
+      return gw.connectToExistingEntity(ids!.diagramId, ids!.layoutId, {
         sourceNodeId: pickerCtx!.sourceNodeId,
         entityId,
         x: pickerCtx!.x,
@@ -395,12 +384,12 @@ function EditorCanvas() {
   const connectToNew = useMutation({
     mutationFn: async ({ name, prototypeId }: { name: string; prototypeId: string | null }) => {
       const gw = await getGateway()
-      return gw.connectToNewEntity(ids!.boardId, ids!.viewId, {
+      return gw.connectToNewEntity(ids!.diagramId, ids!.layoutId, {
         sourceNodeId: pickerCtx!.sourceNodeId,
         name,
         x: pickerCtx!.x,
         y: pickerCtx!.y,
-        prototypeId,
+        nodePrototypeId: prototypeId,
         sourceHandle: pickerCtx!.sourceHandle,
       })
     },
@@ -418,11 +407,11 @@ function EditorCanvas() {
       const count = nodesRef.current.length
       const x = 250 + (count % 5) * 180
       const y = 200 + Math.floor(count / 5) * 120
-      return gw.addNode(ids!.boardId, ids!.viewId, {
+      return gw.addNode(ids!.diagramId, ids!.layoutId, {
         name: prototype.defaultLabel || prototype.name,
         x,
         y,
-        prototypeId: prototype.id,
+        nodePrototypeId: prototype.id,
       })
     },
     onSuccess: invalidateDiagram,
@@ -447,7 +436,7 @@ function EditorCanvas() {
         movedIds.current.clear()
         if (toPersist.length === 0) return
         void getGateway()
-          .then((gw) => gw.bulkUpsertPositions(ids.viewId, toPersist))
+          .then((gw) => gw.bulkUpsertPositions(ids.layoutId, toPersist))
           .then(refreshUndo)
       }, POSITION_FLUSH_MS)
     },
@@ -464,7 +453,7 @@ function EditorCanvas() {
     viewportTimer.current = setTimeout(() => {
       const vp = getViewport()
       void getGateway().then((gw) =>
-        gw.updateView(ids.viewId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } }),
+        gw.updateLayout(ids.layoutId, { viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } }),
       )
     }, POSITION_FLUSH_MS)
   }, [ids, getGateway, getViewport])
@@ -504,11 +493,11 @@ function EditorCanvas() {
   const copySelection = useCallback(async () => {
     if (!ids || selectedNodeIdsRef.current.length === 0) return
     const gw = await getGateway()
-    const board = await gw.getBoard(ids.boardId)
+    const diagram = await gw.getDiagram(ids.diagramId)
     const positions = new Map(
       nodesRef.current.map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
     )
-    const clipboard = buildClipboard(board, selectedNodeIdsRef.current, positions)
+    const clipboard = buildClipboard(diagram, selectedNodeIdsRef.current, positions)
     clipboardRef.current = clipboard
     try {
       await navigator.clipboard?.writeText(serializeClipboard(clipboard))
@@ -531,7 +520,7 @@ function EditorCanvas() {
       if (!clipboard || clipboard.nodes.length === 0) return
       const gw = await getGateway()
       // Offset the paste so it doesn't land exactly on the originals.
-      return gw.pasteClipboard(ids.boardId, ids.viewId, { clipboard, x: 80, y: 80 })
+      return gw.pasteClipboard(ids.diagramId, ids.layoutId, { clipboard, x: 80, y: 80 })
     },
     onSuccess: async () => {
       await invalidateDiagram()
@@ -586,27 +575,27 @@ function EditorCanvas() {
   })
 
   // Drill-down navigation from a typed link (spec §5.4, §7.4): a `diagram` link
-  // targets a board id → open its first view; an `entity` link targets an entity
-  // id → open a board/view where that entity is placed (via the cross-ref index).
+  // targets a diagram id → open its first layout; an `entity` link targets an
+  // entity id → open a diagram/layout where that entity is placed (via the index).
   const drillTo = useCallback(
     async (kind: 'diagram' | 'entity', target: string) => {
       const gw = await getGateway()
       if (kind === 'diagram') {
         try {
-          const board = await gw.getBoard(target)
-          const view = board.views[0]
-          if (view) await navigateTo(board.id, view.id)
+          const diagram = await gw.getDiagram(target)
+          const layout = diagram.layouts[0]
+          if (layout) await navigateTo(diagram.id, layout.id)
         } catch {
-          /* dangling board reference — ignore */
+          /* dangling diagram reference — ignore */
         }
         return
       }
       const usage = await gw.getEntityUsages(target)
       const placement = usage.placements[0]
       if (!placement) return
-      const board = await gw.getBoard(placement.boardId)
-      const view = board.views[0]
-      if (view) await navigateTo(board.id, view.id)
+      const diagram = await gw.getDiagram(placement.diagramId)
+      const layout = diagram.layouts[0]
+      if (layout) await navigateTo(diagram.id, layout.id)
     },
     [getGateway, navigateTo],
   )
@@ -636,26 +625,21 @@ function EditorCanvas() {
           <>
             <BoardViewBar
               graphId={ids.graphId}
-              boardId={ids.boardId}
-              viewId={ids.viewId}
-              onNavigate={(b, v) => void navigateTo(b, v)}
+              diagramId={ids.diagramId}
+              layoutId={ids.layoutId}
+              onNavigate={(d, l) => void navigateTo(d, l)}
               onChanged={() => {
                 void queryClient.invalidateQueries({ queryKey: ['graph', ids.graphId] })
-                void queryClient.invalidateQueries({ queryKey: ['board', ids.boardId] })
+                void queryClient.invalidateQueries({ queryKey: ['diagram-detail', ids.diagramId] })
               }}
             />
             <PaletteSwitcher
               graphId={ids.graphId}
-              viewId={ids.viewId}
               currentPaletteId={ids.paletteId}
-              onChanged={() => {
-                void queryClient.invalidateQueries({ queryKey: ['resolved'] })
-                void invalidateDiagram()
-              }}
+              onSelect={(paletteId) => applyChromePalette(paletteId)}
             />
             <PaletteEditor
               graphId={ids.graphId}
-              onAssignToView={(paletteId) => void assignViewPalette(paletteId)}
               onAssignToChrome={(paletteId) => applyChromePalette(paletteId)}
               onChanged={() => {
                 void queryClient.invalidateQueries({ queryKey: ['palettes', ids.graphId] })
@@ -664,7 +648,6 @@ function EditorCanvas() {
                 void invalidateDiagram()
               }}
             />
-            <StyleProfilePanel graphId={ids.graphId} />
           </>
         ),
         properties:

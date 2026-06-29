@@ -8,9 +8,9 @@
  * reference — the key is absent from the placement override) or is *pinned* to a
  * raw literal (the key is present). The link/unlink toggle:
  *   - **Pin** writes the current resolved value as a raw literal into the
- *     Edge.styleOverride (so a palette swap no longer changes it);
+ *     Edge.style (so a palette swap no longer changes it);
  *   - **Unlink** removes that key so the control follows the palette again.
- * Both go through `updateEdge({ styleOverride })` — one undoable command each.
+ * Both go through `updateEdge({ style })` — one undoable command each.
  */
 
 import { useEffect, useState } from 'react'
@@ -49,9 +49,9 @@ export function EdgeStylePanel({ edgeId, resolved, onChanged }: EdgeStylePanelPr
       const graphs = await gw.listGraphs()
       for (const g of graphs) {
         const detail = await gw.getGraph(g.id)
-        for (const board of detail.boards) {
-          const bd = await gw.getBoard(board.id)
-          const found = bd.edges.find((e) => e.id === edgeId)
+        for (const diagram of detail.diagrams) {
+          const dd = await gw.getDiagram(diagram.id)
+          const found = dd.edges.find((e) => e.id === edgeId)
           if (found) return found
         }
       }
@@ -59,15 +59,15 @@ export function EdgeStylePanel({ edgeId, resolved, onChanged }: EdgeStylePanelPr
     },
   })
 
-  // The placement override is the live source of truth for pin state.
+  // The edge's style is the live source of truth for pin state.
   const [override, setOverride] = useState<StyleDelta>({})
   useEffect(() => {
-    if (edge.data) setOverride(edge.data.styleOverride)
+    if (edge.data) setOverride(edge.data.style)
   }, [edge.data])
 
   const save = useMutation({
     mutationFn: async (next: StyleDelta) =>
-      (await getGateway()).updateEdge(edgeId, { styleOverride: next }),
+      (await getGateway()).updateEdge(edgeId, { style: next }),
     onSuccess: async () => {
       await edge.refetch()
       onChanged()

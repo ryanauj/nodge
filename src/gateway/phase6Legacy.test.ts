@@ -5,7 +5,7 @@
  * reads, writes, and round-trips after the migration adds the oplog.
  */
 import { describe, it, expect } from 'vitest'
-import { createMemoryGateway, type GatewayDeps } from './index'
+import { type GatewayDeps } from './index'
 import { LocalGateway } from './LocalGateway'
 import { createMemorySqlite } from '../db/wasm'
 import { schemaDdl } from '../model/ddl'
@@ -22,8 +22,8 @@ function deterministicDeps(): GatewayDeps {
 }
 
 describe('Phase 6 — backward compatibility', () => {
-  it('the document schemaVersion is unchanged by Phase 6 (oplog is not in the doc)', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(2)
+  it('the document schemaVersion is at the v3 model refactor (oplog is not in the doc)', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(3)
   })
 
   it('a legacy OPFS DB (v2, no oplog table) opens, gains the oplog, and still works', async () => {
@@ -54,8 +54,10 @@ describe('Phase 6 — backward compatibility', () => {
     expect(round.entities.map((e) => e.name)).toContain('New')
   })
 
-  it('a legacy .nodge.json still imports, round-trips and renders into a fresh (Phase-6) DB', async () => {
-    // A document authored before Phase 6 — identical shape, no oplog anywhere.
+  it('a pre-v3 .nodge.json is rejected (clean break, §D11 — no JSON migration)', () => {
+    // A document authored before the v3 model refactor (Board/View, StyleProfiles).
+    // The refactor is a clean break: there is no migration, so such a document is
+    // rejected rather than silently coerced.
     const legacyJson = {
       schemaVersion: 2,
       graph: {
@@ -67,21 +69,7 @@ describe('Phase 6 — backward compatibility', () => {
         updatedAt: '2025-01-01T00:00:00.000Z',
         version: 1,
       },
-      entities: [
-        {
-          id: 'e1',
-          graphId: 'g',
-          name: 'Thing',
-          prototypeId: null,
-          styleProfileId: null,
-          styleOverride: {},
-          links: [],
-          metadata: {},
-          createdAt: '2025-01-01T00:00:00.000Z',
-          updatedAt: '2025-01-01T00:00:00.000Z',
-          version: 1,
-        },
-      ],
+      entities: [],
       relationships: [],
       prototypes: [],
       boards: [],
@@ -89,15 +77,6 @@ describe('Phase 6 — backward compatibility', () => {
       styleProfiles: [],
     }
 
-    const gw = await createMemoryGateway()
-    const imported = await gw.importJson(readDocument(legacyJson))
-    expect(imported.name).toBe('Old Project')
-    const detail = await gw.getGraph(imported.id)
-    expect(detail.entities.map((e) => e.name)).toEqual(['Thing'])
-
-    // Round-trips out unchanged at the current version.
-    const out = await gw.exportJson(imported.id)
-    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(out.entities[0].id).toBe('e1')
+    expect(() => readDocument(legacyJson)).toThrow(/No migration registered/)
   })
 })

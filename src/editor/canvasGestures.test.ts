@@ -29,7 +29,7 @@ describe('addNode gesture', () => {
     const gw = await createMemoryGateway(deterministicDeps())
     const ids = await freshDiagram(gw)
 
-    const { entity, node, position } = await gw.addNode(ids.boardId, ids.viewId, {
+    const { entity, node, position } = await gw.addNode(ids.diagramId, ids.layoutId, {
       name: 'Alpha',
       x: 100,
       y: 50,
@@ -39,18 +39,18 @@ describe('addNode gesture', () => {
     expect(node.entityId).toBe(entity.id)
     expect(position).toEqual({ nodeId: node.id, x: 100, y: 50 })
 
-    const board = await gw.getBoard(ids.boardId)
+    const board = await gw.getDiagram(ids.diagramId)
     expect(board.nodes).toHaveLength(1)
-    expect(board.views[0].positions).toContainEqual({ nodeId: node.id, x: 100, y: 50 })
+    expect(board.layouts[0].positions).toContainEqual({ nodeId: node.id, x: 100, y: 50 })
     expect((await gw.getGraph(ids.graphId)).entities).toHaveLength(1)
 
     // One gesture = one undo step: entity, node and position all disappear.
     expect(await gw.commands.undo()).toBe(true)
-    expect((await gw.getBoard(ids.boardId)).nodes).toHaveLength(0)
+    expect((await gw.getDiagram(ids.diagramId)).nodes).toHaveLength(0)
     expect((await gw.getGraph(ids.graphId)).entities).toHaveLength(0)
 
     expect(await gw.commands.redo()).toBe(true)
-    expect((await gw.getBoard(ids.boardId)).nodes).toHaveLength(1)
+    expect((await gw.getDiagram(ids.diagramId)).nodes).toHaveLength(1)
   })
 })
 
@@ -58,10 +58,10 @@ describe('connectNodes gesture', () => {
   it('creates a relationship + edge tracing back to the placed entities', async () => {
     const gw = await createMemoryGateway(deterministicDeps())
     const ids = await freshDiagram(gw)
-    const a = await gw.addNode(ids.boardId, ids.viewId, { name: 'A', x: 0, y: 0 })
-    const b = await gw.addNode(ids.boardId, ids.viewId, { name: 'B', x: 200, y: 0 })
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 200, y: 0 })
 
-    const { relationship, edge } = await gw.connectNodes(ids.boardId, {
+    const { relationship, edge } = await gw.connectNodes(ids.diagramId, {
       sourceNodeId: a.node.id,
       targetNodeId: b.node.id,
       label: 'calls',
@@ -73,12 +73,12 @@ describe('connectNodes gesture', () => {
     expect(edge.sourceNodeId).toBe(a.node.id)
     expect(edge.targetNodeId).toBe(b.node.id)
 
-    const board = await gw.getBoard(ids.boardId)
+    const board = await gw.getDiagram(ids.diagramId)
     expect(board.edges).toHaveLength(1)
     expect((await gw.getGraph(ids.graphId)).relationships).toHaveLength(1)
 
     expect(await gw.commands.undo()).toBe(true)
-    expect((await gw.getBoard(ids.boardId)).edges).toHaveLength(0)
+    expect((await gw.getDiagram(ids.diagramId)).edges).toHaveLength(0)
     expect((await gw.getGraph(ids.graphId)).relationships).toHaveLength(0)
   })
 })
@@ -87,21 +87,21 @@ describe('move gesture', () => {
   it('persists per-view positions; one drag end is one undoable command', async () => {
     const gw = await createMemoryGateway(deterministicDeps())
     const ids = await freshDiagram(gw)
-    const a = await gw.addNode(ids.boardId, ids.viewId, { name: 'A', x: 0, y: 0 })
-    const b = await gw.addNode(ids.boardId, ids.viewId, { name: 'B', x: 10, y: 10 })
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 10, y: 10 })
 
-    await gw.bulkUpsertPositions(ids.viewId, [
+    await gw.bulkUpsertPositions(ids.layoutId, [
       { nodeId: a.node.id, x: 300, y: 120 },
       { nodeId: b.node.id, x: 320, y: 140 },
     ])
 
-    const positions = (await gw.getBoard(ids.boardId)).views[0].positions
+    const positions = (await gw.getDiagram(ids.diagramId)).layouts[0].positions
     expect(positions).toContainEqual({ nodeId: a.node.id, x: 300, y: 120 })
     expect(positions).toContainEqual({ nodeId: b.node.id, x: 320, y: 140 })
 
     // The whole move (both nodes) reverts in a single undo.
     expect(await gw.commands.undo()).toBe(true)
-    const reverted = (await gw.getBoard(ids.boardId)).views[0].positions
+    const reverted = (await gw.getDiagram(ids.diagramId)).layouts[0].positions
     expect(reverted).toContainEqual({ nodeId: a.node.id, x: 0, y: 0 })
     expect(reverted).toContainEqual({ nodeId: b.node.id, x: 10, y: 10 })
   })
@@ -112,11 +112,11 @@ describe('edit session round-trip', () => {
     const gw = await createMemoryGateway(deterministicDeps())
     const ids = await freshDiagram(gw)
 
-    const a = await gw.addNode(ids.boardId, ids.viewId, { name: 'A', x: 0, y: 0 })
-    const b = await gw.addNode(ids.boardId, ids.viewId, { name: 'B', x: 100, y: 0 })
-    await gw.connectNodes(ids.boardId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 100, y: 0 })
+    await gw.connectNodes(ids.diagramId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
 
-    const full = await gw.getBoard(ids.boardId)
+    const full = await gw.getDiagram(ids.diagramId)
     expect(full.nodes).toHaveLength(2)
     expect(full.edges).toHaveLength(1)
 
@@ -124,7 +124,7 @@ describe('edit session round-trip', () => {
     await gw.commands.undo() // edge/relationship
     await gw.commands.undo() // node B
     await gw.commands.undo() // node A
-    const empty = await gw.getBoard(ids.boardId)
+    const empty = await gw.getDiagram(ids.diagramId)
     expect(empty.nodes).toHaveLength(0)
     expect(empty.edges).toHaveLength(0)
     expect((await gw.getGraph(ids.graphId)).entities).toHaveLength(0)
@@ -134,7 +134,7 @@ describe('edit session round-trip', () => {
     await gw.commands.redo()
     await gw.commands.redo()
     await gw.commands.redo()
-    const restored = await gw.getBoard(ids.boardId)
+    const restored = await gw.getDiagram(ids.diagramId)
     expect(restored.nodes).toHaveLength(2)
     expect(restored.edges).toHaveLength(1)
   })

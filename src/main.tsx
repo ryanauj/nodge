@@ -14,10 +14,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <GatewayProvider>
         <BrowserRouter basename={import.meta.env.BASE_URL}>
           {/* The active diagram is reflected in the URL (spec §11 — React Router
-              for graph/board/view). A single catch-all route keeps one stable
-              `<App/>` instance mounted for `/` and `/board/:boardId/view/:viewId`
-              alike, so switching boards/views only changes the location (never a
-              remount that would reset the canvas). The editor parses the path. */}
+              for graph/diagram/layout). A single catch-all route keeps one stable
+              `<App/>` instance mounted for `/` and
+              `/diagram/:diagramId/layout/:layoutId` alike, so switching
+              diagrams/layouts only changes the location (never a remount that
+              would reset the canvas). The editor parses the path. */}
           <Routes>
             <Route path="*" element={<App />} />
           </Routes>

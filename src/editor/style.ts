@@ -5,16 +5,12 @@
  *
  * A resolved style is computed by layering, later-wins:
  *
- *   Palette tokens  →  Prototype style  →  StyleProfile  →  base override  →  placement override
+ *   Palette fallback  →  row.style (the full snapshot)
  *
- * For nodes the base override is the Entity's `styleOverride` and the placement
- * override is the Node's; for edges it is the Relationship's then the Edge's.
- * A referenced {@link StyleProfile} (§8.3 — a named shared "look") layers in
- * just above the palette/prototype baseline but below the explicit entity/node
- * pins, so a profile re-skins everything it covers while a pinned key still wins.
- * Because the palette supplies the base, a node that pins nothing simply
- * *follows the palette* — swapping the palette re-skins it. A layer may pin a
- * raw value for any key as the escape hatch (the link/unlink affordance).
+ * For nodes the row layer is `node.style`; for edges it is `edge.style` (§D3).
+ * The style is a full snapshot seeded from the row's NodePrototype/EdgePrototype
+ * and refreshable; the prototype is not consulted at render time. The palette
+ * supplies the fallback so any key the snapshot omits still resolves.
  *
  * Resolution stays **total** (every field has a fallback) and **backward
  * compatible**: the palette baseline is read tolerantly off `PaletteTokens`, so
@@ -193,8 +189,8 @@ function pick<T>(
 
 /**
  * Resolve a node's visual style by layering the cascade. The palette baseline
- * is read tolerantly (the full token contract fills any gaps); `layers` are the
- * prototype style, the entity override and the node override, in that order.
+ * is read tolerantly (the full token contract fills any gaps); `layers` is the
+ * node's full `style` snapshot (§D3).
  */
 export function resolveNodeStyle(
   palette: PaletteTokens,
@@ -210,8 +206,8 @@ export function resolveNodeStyle(
 }
 
 /**
- * Resolve an edge's visual style. `layers` are the relationship prototype
- * style, the relationship override and the edge override, in that order.
+ * Resolve an edge's visual style. `layers` is the edge's full `style`
+ * snapshot (§D3).
  */
 export function resolveEdgeStyle(
   palette: PaletteTokens,

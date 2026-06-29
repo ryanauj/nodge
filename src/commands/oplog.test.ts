@@ -53,11 +53,11 @@ describe('Phase 6 — oplog write seam', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const repo = new Repository((gw as any).db)
     const graph = await gw.createGraph({ name: 'G' })
-    const board = await gw.createBoard(graph.id, { name: 'B' })
-    const view = await gw.createView(board.id, { name: 'V' })
+    const diagram = await gw.createDiagram(graph.id, { name: 'B' })
+    const layout = await gw.createLayout(diagram.id, { name: 'V' })
     const entity = await gw.createEntity(graph.id, { name: 'E' })
-    const node = await gw.createNode(board.id, { entityId: entity.id })
-    await gw.bulkUpsertPositions(view.id, [{ nodeId: node.id, x: 1, y: 2 }])
+    const node = await gw.createNode(diagram.id, { entityId: entity.id })
+    await gw.bulkUpsertPositions(layout.id, [{ nodeId: node.id, x: 1, y: 2 }])
 
     const log = await repo.list(oplogTable)
     expect(log.some((e) => e.tableName === 'node_position')).toBe(false)

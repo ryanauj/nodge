@@ -204,7 +204,7 @@ export function EntityPanel({ entityId, onChanged, onNavigate }: EntityPanelProp
         <ul className="panel-list">
           {(usages.data?.placements ?? []).map((p) => (
             <li key={p.nodeId} className="usage-row">
-              {p.label} — <em>{p.boardName}</em>
+              {p.label} — <em>{p.diagramName}</em>
             </li>
           ))}
         </ul>

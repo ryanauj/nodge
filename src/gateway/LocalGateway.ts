@@ -17,36 +17,31 @@ import { CURRENT_SCHEMA_VERSION, type NodgeDocument, validateDocument } from '..
 import { createTableSql, dropTableSql } from '../model/ddl'
 import {
   ALL_TABLES,
-  type Board,
+  type Diagram,
   type Edge,
   type Entity,
   type Graph,
+  type Layout,
   type Node,
   type Palette,
   type Prototype,
   type Relationship,
-  type StyleProfile,
-  type View,
-  boardTable,
+  diagramTable,
   edgeTable,
   entityTable,
   graphTable,
+  layoutTable,
   nodePositionTable,
   nodeTable,
   paletteTable,
   prototypeTable,
   relationshipTable,
-  styleProfileTable,
-  viewTable,
 } from '../model/schema'
 import { migrateDocument } from '../io/jsonMigrations'
 import { loadDocumentIntoRepository } from '../io/loadDocument'
 import type {
   AddNodeInput,
   AddNodeResult,
-  BoardDetail,
-  BoardInput,
-  BoardPatch,
   ConnectNodesInput,
   ConnectNodesResult,
   ConnectToEntityResult,
@@ -55,6 +50,9 @@ import type {
   CreatePrototypeFromEdgeInput,
   CreatePrototypeFromNodeInput,
   DataGateway,
+  DiagramDetail,
+  DiagramInput,
+  DiagramPatch,
   EdgeInput,
   EdgePatch,
   EntityInput,
@@ -67,6 +65,9 @@ import type {
   GraphDetail,
   GraphInput,
   GraphPatch,
+  LayoutDetail,
+  LayoutInput,
+  LayoutPatch,
   NodeInput,
   NodePatch,
   NodePositionInput,
@@ -82,12 +83,7 @@ import type {
   RefreshFromPrototypeResult,
   RelationshipInput,
   RelationshipPatch,
-  StyleProfileInput,
-  StyleProfilePatch,
   Uuid,
-  ViewDetail,
-  ViewInput,
-  ViewPatch,
 } from './types'
 
 export interface GatewayDeps {
@@ -164,9 +160,8 @@ export class LocalGateway implements DataGateway {
       entities: await this.repo.list(entityTable, { graphId: id }),
       relationships: await this.repo.list(relationshipTable, { graphId: id }),
       prototypes: await this.repo.list(prototypeTable, { graphId: id }),
-      boards: await this.repo.list(boardTable, { graphId: id }),
+      diagrams: await this.repo.list(diagramTable, { graphId: id }),
       palettes: await this.repo.list(paletteTable, { graphId: id }),
-      styleProfiles: await this.repo.list(styleProfileTable, { graphId: id }),
     }
   }
 
@@ -196,9 +191,7 @@ export class LocalGateway implements DataGateway {
       ...this.stampNew(),
       graphId,
       name: input.name,
-      prototypeId: input.prototypeId ?? null,
-      styleProfileId: input.styleProfileId ?? null,
-      styleOverride: input.styleOverride ?? {},
+      nodePrototypeId: input.nodePrototypeId ?? null,
       links: input.links ?? [],
       metadata: input.metadata ?? {},
     }
@@ -221,10 +214,9 @@ export class LocalGateway implements DataGateway {
       graphId,
       sourceEntityId: input.sourceEntityId,
       targetEntityId: input.targetEntityId,
-      prototypeId: input.prototypeId ?? null,
+      edgePrototypeId: input.edgePrototypeId ?? null,
       directed: input.directed ?? true,
       label: input.label ?? '',
-      styleOverride: input.styleOverride ?? {},
       metadata: input.metadata ?? {},
     }
     return this.commands.execute(
@@ -250,76 +242,75 @@ export class LocalGateway implements DataGateway {
     )
   }
 
-  // ── Boards / Nodes / Edges / Views ───────────────────────────────────────
-  async createBoard(graphId: Uuid, input: BoardInput): Promise<Board> {
-    const board: Board = {
+  // ── Diagrams / Nodes / Edges / Layouts ───────────────────────────────────
+  async createDiagram(graphId: Uuid, input: DiagramInput): Promise<Diagram> {
+    const diagram: Diagram = {
       ...this.stampNew(),
       graphId,
       name: input.name,
       description: input.description ?? '',
     }
-    return this.commands.execute(command('createBoard', (m) => m.insert(boardTable, board)))
+    return this.commands.execute(command('createDiagram', (m) => m.insert(diagramTable, diagram)))
   }
 
-  async getBoard(id: Uuid): Promise<BoardDetail> {
-    const board = await this.require(await this.repo.getById(boardTable, id), 'board', id)
-    const views = await this.repo.list(viewTable, { boardId: id })
-    const viewsDetail: ViewDetail[] = []
-    for (const view of views) {
-      const positions = await this.repo.list(nodePositionTable, { viewId: view.id })
-      viewsDetail.push({
-        ...view,
+  async getDiagram(id: Uuid): Promise<DiagramDetail> {
+    const diagram = await this.require(await this.repo.getById(diagramTable, id), 'diagram', id)
+    const layouts = await this.repo.list(layoutTable, { diagramId: id })
+    const layoutsDetail: LayoutDetail[] = []
+    for (const layout of layouts) {
+      const positions = await this.repo.list(nodePositionTable, { layoutId: layout.id })
+      layoutsDetail.push({
+        ...layout,
         positions: positions.map((p) => ({ nodeId: p.nodeId, x: p.x, y: p.y })),
       })
     }
     return {
-      ...board,
-      nodes: await this.repo.list(nodeTable, { boardId: id }),
-      edges: await this.repo.list(edgeTable, { boardId: id }),
-      views: viewsDetail,
+      ...diagram,
+      nodes: await this.repo.list(nodeTable, { diagramId: id }),
+      edges: await this.repo.list(edgeTable, { diagramId: id }),
+      layouts: layoutsDetail,
     }
   }
 
-  async updateBoard(id: Uuid, patch: BoardPatch): Promise<Board> {
-    const current = await this.require(await this.repo.getById(boardTable, id), 'board', id)
+  async updateDiagram(id: Uuid, patch: DiagramPatch): Promise<Diagram> {
+    const current = await this.require(await this.repo.getById(diagramTable, id), 'diagram', id)
     const updated = this.bumpVersion(applyPatch(current, patch))
-    return this.commands.execute(command('updateBoard', (m) => m.put(boardTable, updated)))
+    return this.commands.execute(command('updateDiagram', (m) => m.put(diagramTable, updated)))
   }
 
   /**
-   * Delete a board and everything visual under it — its nodes, edges, views and
-   * per-view positions — as a single undoable command (spec §7.1: removing a
-   * board never touches the base entities/relationships, only the placements).
+   * Delete a diagram and everything visual under it — its nodes, edges, layouts
+   * and per-layout positions — as a single undoable command (spec §7.1: removing
+   * a diagram never touches the base entities/relationships, only the placements).
    */
-  async deleteBoard(id: Uuid): Promise<void> {
-    await this.require(await this.repo.getById(boardTable, id), 'board', id)
-    const nodes = await this.repo.list(nodeTable, { boardId: id })
-    const edges = await this.repo.list(edgeTable, { boardId: id })
-    const views = await this.repo.list(viewTable, { boardId: id })
-    const positions: { viewId: Uuid; nodeId: Uuid }[] = []
-    for (const view of views) {
-      const ps = await this.repo.list(nodePositionTable, { viewId: view.id })
-      for (const p of ps) positions.push({ viewId: view.id, nodeId: p.nodeId })
+  async deleteDiagram(id: Uuid): Promise<void> {
+    await this.require(await this.repo.getById(diagramTable, id), 'diagram', id)
+    const nodes = await this.repo.list(nodeTable, { diagramId: id })
+    const edges = await this.repo.list(edgeTable, { diagramId: id })
+    const layouts = await this.repo.list(layoutTable, { diagramId: id })
+    const positions: { layoutId: Uuid; nodeId: Uuid }[] = []
+    for (const layout of layouts) {
+      const ps = await this.repo.list(nodePositionTable, { layoutId: layout.id })
+      for (const p of ps) positions.push({ layoutId: layout.id, nodeId: p.nodeId })
     }
     await this.commands.execute(
-      command('deleteBoard', async (m) => {
+      command('deleteDiagram', async (m) => {
         for (const p of positions) await m.remove(nodePositionTable, p)
         for (const e of edges) await m.remove(edgeTable, { id: e.id })
         for (const n of nodes) await m.remove(nodeTable, { id: n.id })
-        for (const v of views) await m.remove(viewTable, { id: v.id })
-        await m.remove(boardTable, { id })
+        for (const l of layouts) await m.remove(layoutTable, { id: l.id })
+        await m.remove(diagramTable, { id })
       }),
     )
   }
 
-  async createNode(boardId: Uuid, input: NodeInput): Promise<Node> {
+  async createNode(diagramId: Uuid, input: NodeInput): Promise<Node> {
     const node: Node = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       entityId: input.entityId,
       label: input.label ?? '',
-      styleProfileId: input.styleProfileId ?? null,
-      styleOverride: input.styleOverride ?? {},
+      style: input.style ?? {},
     }
     return this.commands.execute(command('createNode', (m) => m.insert(nodeTable, node)))
   }
@@ -334,26 +325,26 @@ export class LocalGateway implements DataGateway {
     await this.commands.execute(command('deleteNode', (m) => m.remove(nodeTable, { id })))
   }
 
-  async createEdge(boardId: Uuid, input: EdgeInput): Promise<Edge> {
+  async createEdge(diagramId: Uuid, input: EdgeInput): Promise<Edge> {
     const edge: Edge = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       relationshipId: input.relationshipId,
       sourceNodeId: input.sourceNodeId,
       targetNodeId: input.targetNodeId,
       sourceHandle: input.sourceHandle ?? null,
       targetHandle: input.targetHandle ?? null,
       label: input.label ?? '',
-      styleOverride: input.styleOverride ?? {},
+      style: input.style ?? {},
     }
     return this.commands.execute(command('createEdge', (m) => m.insert(edgeTable, edge)))
   }
 
   /**
    * Patch an edge placement (spec §8.3 — the edge-level link/unlink affordance).
-   * Pinning an edge style key writes a raw literal into `Edge.styleOverride`;
-   * unlinking removes the key so the value follows the palette again. Routed
-   * through the command bus as one undoable command, exactly like `updateNode`.
+   * Pinning an edge style key writes a raw literal into `Edge.style`; unlinking
+   * removes the key so the value follows the palette again. Routed through the
+   * command bus as one undoable command, exactly like `updateNode`.
    */
   async updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge> {
     const current = await this.require(await this.repo.getById(edgeTable, id), 'edge', id)
@@ -365,53 +356,52 @@ export class LocalGateway implements DataGateway {
     await this.commands.execute(command('deleteEdge', (m) => m.remove(edgeTable, { id })))
   }
 
-  async createView(boardId: Uuid, input: ViewInput): Promise<View> {
-    const view: View = {
+  async createLayout(diagramId: Uuid, input: LayoutInput): Promise<Layout> {
+    const layout: Layout = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       name: input.name,
-      paletteId: input.paletteId ?? null,
-      filter: input.filter ?? null,
+      algorithm: input.algorithm ?? 'manual',
       viewport: input.viewport ?? null,
     }
-    return this.commands.execute(command('createView', (m) => m.insert(viewTable, view)))
+    return this.commands.execute(command('createLayout', (m) => m.insert(layoutTable, layout)))
   }
 
   /**
-   * Patch a view's presentation (spec §7.2): rename, switch palette, set the
-   * filter/focus lens, or persist pan/zoom. `null` clears filter/viewport.
-   * Switching `paletteId` is how a palette swap re-skins a view — `diagram.ts`
-   * resolves tokens from the view's palette, so token-referenced styles follow.
+   * Patch a layout (§D2): rename, switch algorithm, or persist pan/zoom. `null`
+   * clears the viewport. One undoable command.
    */
-  async updateView(id: Uuid, patch: ViewPatch): Promise<View> {
-    const current = await this.require(await this.repo.getById(viewTable, id), 'view', id)
+  async updateLayout(id: Uuid, patch: LayoutPatch): Promise<Layout> {
+    const current = await this.require(await this.repo.getById(layoutTable, id), 'layout', id)
     const updated = this.bumpVersion(applyPatch(current, patch))
-    return this.commands.execute(command('updateView', (m) => m.put(viewTable, updated)))
+    return this.commands.execute(command('updateLayout', (m) => m.put(layoutTable, updated)))
   }
 
-  /** Delete a view and its per-view positions as a single undoable command. */
-  async deleteView(id: Uuid): Promise<void> {
-    await this.require(await this.repo.getById(viewTable, id), 'view', id)
-    const positions = await this.repo.list(nodePositionTable, { viewId: id })
+  /** Delete a layout and its per-layout positions as a single undoable command. */
+  async deleteLayout(id: Uuid): Promise<void> {
+    await this.require(await this.repo.getById(layoutTable, id), 'layout', id)
+    const positions = await this.repo.list(nodePositionTable, { layoutId: id })
     await this.commands.execute(
-      command('deleteView', async (m) => {
-        for (const p of positions) await m.remove(nodePositionTable, { viewId: id, nodeId: p.nodeId })
-        await m.remove(viewTable, { id })
+      command('deleteLayout', async (m) => {
+        for (const p of positions)
+          await m.remove(nodePositionTable, { layoutId: id, nodeId: p.nodeId })
+        await m.remove(layoutTable, { id })
       }),
     )
   }
 
   /**
-   * Place an EXISTING entity as a new node + per-view position on a board+view
-   * (spec §7.1 — the same entity can appear on many boards). One undoable
-   * command; the base entity is untouched so edits reflect on every board.
+   * Place an EXISTING entity as a new node + per-layout position on a
+   * diagram+layout (spec §7.1 — the same entity can appear on many diagrams).
+   * One undoable command; the base entity is untouched so edits reflect on every
+   * diagram.
    */
   async placeEntity(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: PlaceEntityInput,
   ): Promise<PlaceEntityResult> {
-    await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    await this.require(await this.repo.getById(diagramTable, diagramId), 'diagram', diagramId)
     const entity = await this.require(
       await this.repo.getById(entityTable, input.entityId),
       'entity',
@@ -419,13 +409,12 @@ export class LocalGateway implements DataGateway {
     )
     const node: Node = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       entityId: entity.id,
       label: input.label ?? '',
-      styleProfileId: null,
-      styleOverride: input.styleOverride ?? {},
+      style: input.style ?? {},
     }
-    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const position = { layoutId, nodeId: node.id, x: input.x, y: input.y }
     return this.commands.execute(
       command('placeEntity', async (m) => {
         await m.insert(nodeTable, node)
@@ -436,13 +425,13 @@ export class LocalGateway implements DataGateway {
   }
 
   async bulkUpsertPositions(
-    viewId: Uuid,
+    layoutId: Uuid,
     positions: NodePositionInput[],
   ): Promise<NodePositionInput[]> {
     await this.commands.execute(
       command('bulkUpsertPositions', async (m) => {
         for (const p of positions) {
-          await m.put(nodePositionTable, { viewId, nodeId: p.nodeId, x: p.x, y: p.y })
+          await m.put(nodePositionTable, { layoutId, nodeId: p.nodeId, x: p.x, y: p.y })
         }
       }),
     )
@@ -450,31 +439,30 @@ export class LocalGateway implements DataGateway {
   }
 
   // ── Composite canvas gestures ────────────────────────────────────────────
-  async addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
-    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
-    // Seed style + metadata from the linked prototype on creation (spec §9.2).
-    const seed = await this.seedFromPrototype(input.prototypeId, input.entityStyleOverride)
+  async addNode(diagramId: Uuid, layoutId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
+    const diagram = await this.require(
+      await this.repo.getById(diagramTable, diagramId),
+      'diagram',
+      diagramId,
+    )
+    // Seed the node's style snapshot from the linked NodePrototype on creation (§D3).
+    const seed = await this.seedFromPrototype(input.nodePrototypeId, input.style)
     const entity: Entity = {
       ...this.stampNew(),
-      graphId: board.graphId,
+      graphId: diagram.graphId,
       name: input.name,
-      prototypeId: input.prototypeId ?? null,
-      // Seed the entity's referenced StyleProfile from the prototype's default
-      // look (§9.1) — persists like the rest of the prototype seed.
-      styleProfileId: seed.styleProfileId,
-      styleOverride: seed.styleOverride,
+      nodePrototypeId: input.nodePrototypeId ?? null,
       links: [],
       metadata: seed.metadata,
     }
     const node: Node = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       entityId: entity.id,
       label: input.name,
-      styleProfileId: null,
-      styleOverride: input.styleOverride ?? {},
+      style: seed.style,
     }
-    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const position = { layoutId, nodeId: node.id, x: input.x, y: input.y }
     return this.commands.execute(
       command('addNode', async (m) => {
         await m.insert(entityTable, entity)
@@ -485,8 +473,12 @@ export class LocalGateway implements DataGateway {
     )
   }
 
-  async connectNodes(boardId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult> {
-    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+  async connectNodes(diagramId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult> {
+    const diagram = await this.require(
+      await this.repo.getById(diagramTable, diagramId),
+      'diagram',
+      diagramId,
+    )
     const source = await this.require(
       await this.repo.getById(nodeTable, input.sourceNodeId),
       'node',
@@ -497,27 +489,27 @@ export class LocalGateway implements DataGateway {
       'node',
       input.targetNodeId,
     )
+    const edgeSeed = await this.seedEdgeFromPrototype(input.edgePrototypeId)
     const relationship: Relationship = {
       ...this.stampNew(),
-      graphId: board.graphId,
+      graphId: diagram.graphId,
       sourceEntityId: source.entityId,
       targetEntityId: target.entityId,
-      prototypeId: input.prototypeId ?? null,
+      edgePrototypeId: input.edgePrototypeId ?? null,
       directed: input.directed ?? true,
       label: input.label ?? '',
-      styleOverride: {},
       metadata: {},
     }
     const edge: Edge = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       relationshipId: relationship.id,
       sourceNodeId: input.sourceNodeId,
       targetNodeId: input.targetNodeId,
       sourceHandle: input.sourceHandle ?? null,
       targetHandle: input.targetHandle ?? null,
       label: input.label ?? '',
-      styleOverride: {},
+      style: edgeSeed,
     }
     return this.commands.execute(
       command('connectNodes', async (m) => {
@@ -529,36 +521,45 @@ export class LocalGateway implements DataGateway {
   }
 
   /**
-   * Seed an entity's style + metadata from a prototype on creation (spec §9.2:
-   * "On creation, the prototype seeds the entity's style + metadata"). The link
-   * persists via `prototypeId`; later prototype edits never auto-propagate.
+   * Snapshot a NodePrototype's style + metadata onto a created node (spec §D3:
+   * creating a node copies its prototype's full `style`). The link persists via
+   * `entity.nodePrototypeId`; later prototype edits never auto-propagate.
    */
   private async seedFromPrototype(
     prototypeId: Uuid | null | undefined,
-    entityStyleOverride: Record<string, unknown> | undefined,
+    style: Record<string, unknown> | undefined,
   ): Promise<{
-    styleOverride: Record<string, unknown>
+    style: Record<string, unknown>
     metadata: Record<string, unknown>
-    styleProfileId: Uuid | null
   }> {
-    if (!prototypeId)
-      return { styleOverride: entityStyleOverride ?? {}, metadata: {}, styleProfileId: null }
+    if (!prototypeId) return { style: style ?? {}, metadata: {} }
     const proto = await this.repo.getById(prototypeTable, prototypeId)
-    if (!proto)
-      return { styleOverride: entityStyleOverride ?? {}, metadata: {}, styleProfileId: null }
+    if (!proto) return { style: style ?? {}, metadata: {} }
     return {
-      styleOverride: { ...proto.style, ...(entityStyleOverride ?? {}) },
+      style: { ...proto.style, ...(style ?? {}) },
       metadata: { ...proto.metadata },
-      styleProfileId: proto.styleProfileId ?? null,
     }
   }
 
+  /** Snapshot an EdgePrototype's style onto a created edge (spec §D3). */
+  private async seedEdgeFromPrototype(
+    prototypeId: Uuid | null | undefined,
+  ): Promise<Record<string, unknown>> {
+    if (!prototypeId) return {}
+    const proto = await this.repo.getById(prototypeTable, prototypeId)
+    return proto ? { ...proto.style } : {}
+  }
+
   async connectToExistingEntity(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: ConnectToExistingEntityInput,
   ): Promise<ConnectToEntityResult> {
-    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const diagram = await this.require(
+      await this.repo.getById(diagramTable, diagramId),
+      'diagram',
+      diagramId,
+    )
     const source = await this.require(
       await this.repo.getById(nodeTable, input.sourceNodeId),
       'node',
@@ -569,36 +570,36 @@ export class LocalGateway implements DataGateway {
       'entity',
       input.entityId,
     )
+    const nodeSeed = await this.seedFromPrototype(entity.nodePrototypeId, undefined)
+    const edgeSeed = await this.seedEdgeFromPrototype(input.edgePrototypeId)
     const node: Node = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       entityId: entity.id,
       label: '',
-      styleProfileId: null,
-      styleOverride: {},
+      style: nodeSeed.style,
     }
-    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const position = { layoutId, nodeId: node.id, x: input.x, y: input.y }
     const relationship: Relationship = {
       ...this.stampNew(),
-      graphId: board.graphId,
+      graphId: diagram.graphId,
       sourceEntityId: source.entityId,
       targetEntityId: entity.id,
-      prototypeId: input.relationshipPrototypeId ?? null,
+      edgePrototypeId: input.edgePrototypeId ?? null,
       directed: input.directed ?? true,
       label: input.label ?? '',
-      styleOverride: {},
       metadata: {},
     }
     const edge: Edge = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       relationshipId: relationship.id,
       sourceNodeId: input.sourceNodeId,
       targetNodeId: node.id,
       sourceHandle: input.sourceHandle ?? null,
       targetHandle: input.targetHandle ?? null,
       label: input.label ?? '',
-      styleOverride: {},
+      style: edgeSeed,
     }
     return this.commands.execute(
       command('connectToExistingEntity', async (m) => {
@@ -606,63 +607,70 @@ export class LocalGateway implements DataGateway {
         await m.put(nodePositionTable, position)
         await m.insert(relationshipTable, relationship)
         await m.insert(edgeTable, edge)
-        return { entity, node, position: { nodeId: node.id, x: input.x, y: input.y }, relationship, edge }
+        return {
+          entity,
+          node,
+          position: { nodeId: node.id, x: input.x, y: input.y },
+          relationship,
+          edge,
+        }
       }),
     )
   }
 
   async connectToNewEntity(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: ConnectToNewEntityInput,
   ): Promise<ConnectToEntityResult> {
-    const board = await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    const diagram = await this.require(
+      await this.repo.getById(diagramTable, diagramId),
+      'diagram',
+      diagramId,
+    )
     const source = await this.require(
       await this.repo.getById(nodeTable, input.sourceNodeId),
       'node',
       input.sourceNodeId,
     )
-    const seed = await this.seedFromPrototype(input.prototypeId, undefined)
+    const seed = await this.seedFromPrototype(input.nodePrototypeId, undefined)
+    const edgeSeed = await this.seedEdgeFromPrototype(input.edgePrototypeId)
     const entity: Entity = {
       ...this.stampNew(),
-      graphId: board.graphId,
+      graphId: diagram.graphId,
       name: input.name,
-      prototypeId: input.prototypeId ?? null,
-      styleProfileId: seed.styleProfileId,
-      styleOverride: seed.styleOverride,
+      nodePrototypeId: input.nodePrototypeId ?? null,
       links: [],
       metadata: seed.metadata,
     }
     const node: Node = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       entityId: entity.id,
       label: input.name,
-      styleProfileId: null,
-      styleOverride: {},
+      style: seed.style,
     }
-    const position = { viewId, nodeId: node.id, x: input.x, y: input.y }
+    const position = { layoutId, nodeId: node.id, x: input.x, y: input.y }
     const relationship: Relationship = {
       ...this.stampNew(),
-      graphId: board.graphId,
+      graphId: diagram.graphId,
       sourceEntityId: source.entityId,
       targetEntityId: entity.id,
-      prototypeId: input.relationshipPrototypeId ?? null,
+      edgePrototypeId: input.edgePrototypeId ?? null,
       directed: input.directed ?? true,
       label: input.label ?? '',
-      styleOverride: {},
       metadata: {},
     }
     const edge: Edge = {
       ...this.stampNew(),
-      boardId,
+      diagramId,
       relationshipId: relationship.id,
       sourceNodeId: input.sourceNodeId,
       targetNodeId: node.id,
       sourceHandle: input.sourceHandle ?? null,
       targetHandle: input.targetHandle ?? null,
       label: input.label ?? '',
-      styleOverride: {},
+      style: edgeSeed,
     }
     return this.commands.execute(
       command('connectToNewEntity', async (m) => {
@@ -671,38 +679,43 @@ export class LocalGateway implements DataGateway {
         await m.put(nodePositionTable, position)
         await m.insert(relationshipTable, relationship)
         await m.insert(edgeTable, edge)
-        return { entity, node, position: { nodeId: node.id, x: input.x, y: input.y }, relationship, edge }
+        return {
+          entity,
+          node,
+          position: { nodeId: node.id, x: input.x, y: input.y },
+          relationship,
+          edge,
+        }
       }),
     )
   }
 
   async pasteClipboard(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: PasteClipboardInput,
   ): Promise<PasteClipboardResult> {
-    await this.require(await this.repo.getById(boardTable, boardId), 'board', boardId)
+    await this.require(await this.repo.getById(diagramTable, diagramId), 'diagram', diagramId)
     const { clipboard } = input
     // Map each clipboard node's refId → the freshly created placement.
     const nodes: Node[] = []
     const positions: NodePositionInput[] = []
     const refToNodeId = new Map<Uuid, Uuid>()
-    const nodePositions: { viewId: Uuid; nodeId: Uuid; x: number; y: number }[] = []
+    const nodePositions: { layoutId: Uuid; nodeId: Uuid; x: number; y: number }[] = []
     for (const cn of clipboard.nodes) {
       const node: Node = {
         ...this.stampNew(),
-        boardId,
+        diagramId,
         entityId: cn.entityId, // SAME entity — never forks identity (§9.3)
         label: cn.label,
-        styleProfileId: null,
-        styleOverride: { ...cn.styleOverride },
+        style: { ...cn.style },
       }
       refToNodeId.set(cn.refId, node.id)
       nodes.push(node)
       const x = input.x + cn.dx
       const y = input.y + cn.dy
       positions.push({ nodeId: node.id, x, y })
-      nodePositions.push({ viewId, nodeId: node.id, x, y })
+      nodePositions.push({ layoutId, nodeId: node.id, x, y })
     }
     const edges: Edge[] = []
     for (const ce of clipboard.edges) {
@@ -711,14 +724,14 @@ export class LocalGateway implements DataGateway {
       if (!sourceNodeId || !targetNodeId) continue // edge not fully internal to the selection
       edges.push({
         ...this.stampNew(),
-        boardId,
+        diagramId,
         relationshipId: ce.relationshipId, // SAME relationship
         sourceNodeId,
         targetNodeId,
         sourceHandle: ce.sourceHandle ?? null,
         targetHandle: ce.targetHandle ?? null,
         label: ce.label,
-        styleOverride: { ...ce.styleOverride },
+        style: { ...ce.style },
       })
     }
     return this.commands.execute(
@@ -739,18 +752,18 @@ export class LocalGateway implements DataGateway {
       entityId,
     )
     const nodes = (await this.repo.list(nodeTable)).filter((n) => n.entityId === entityId)
-    const boardCache = new Map<Uuid, Board | undefined>()
-    const boardOf = async (id: Uuid): Promise<Board | undefined> => {
-      if (!boardCache.has(id)) boardCache.set(id, await this.repo.getById(boardTable, id))
-      return boardCache.get(id)
+    const diagramCache = new Map<Uuid, Diagram | undefined>()
+    const diagramOf = async (id: Uuid): Promise<Diagram | undefined> => {
+      if (!diagramCache.has(id)) diagramCache.set(id, await this.repo.getById(diagramTable, id))
+      return diagramCache.get(id)
     }
     const placements: EntityPlacement[] = []
     for (const n of nodes) {
-      const board = await boardOf(n.boardId)
+      const diagram = await diagramOf(n.diagramId)
       placements.push({
         nodeId: n.id,
-        boardId: n.boardId,
-        boardName: board?.name ?? '',
+        diagramId: n.diagramId,
+        diagramName: diagram?.name ?? '',
         label: n.label || entity.name,
       })
     }
@@ -760,12 +773,12 @@ export class LocalGateway implements DataGateway {
     )
     const edgePlacements: EntityEdgePlacement[] = edges.map((e) => ({
       edgeId: e.id,
-      boardId: e.boardId,
+      diagramId: e.diagramId,
       relationshipId: e.relationshipId,
     }))
-    const relationships = (await this.repo.list(relationshipTable, { graphId: entity.graphId })).filter(
-      (r) => r.sourceEntityId === entityId || r.targetEntityId === entityId,
-    )
+    const relationships = (
+      await this.repo.list(relationshipTable, { graphId: entity.graphId })
+    ).filter((r) => r.sourceEntityId === entityId || r.targetEntityId === entityId)
     const relationshipUsages: EntityRelationship[] = relationships.map((r) => ({
       relationshipId: r.id,
       role: r.sourceEntityId === entityId ? 'source' : 'target',
@@ -798,7 +811,7 @@ export class LocalGateway implements DataGateway {
     }
   }
 
-  // ── Prototypes / Palettes / StyleProfiles ────────────────────────────────
+  // ── Prototypes / Palettes ────────────────────────────────────────────────
   async listPrototypes(graphId: Uuid): Promise<Prototype[]> {
     return this.repo.list(prototypeTable, { graphId })
   }
@@ -811,7 +824,6 @@ export class LocalGateway implements DataGateway {
       name: input.name,
       shape: input.shape ?? null,
       defaultLabel: input.defaultLabel ?? '',
-      styleProfileId: input.styleProfileId ?? null,
       style: input.style ?? {},
       metadata: input.metadata ?? {},
       linkScaffold: input.linkScaffold ?? [],
@@ -832,25 +844,24 @@ export class LocalGateway implements DataGateway {
   }
 
   async createPrototypeFromNode(input: CreatePrototypeFromNodeInput): Promise<Prototype> {
-    const node = await this.require(await this.repo.getById(nodeTable, input.nodeId), 'node', input.nodeId)
+    const node = await this.require(
+      await this.repo.getById(nodeTable, input.nodeId),
+      'node',
+      input.nodeId,
+    )
     const entity = await this.require(
       await this.repo.getById(entityTable, node.entityId),
       'entity',
       node.entityId,
     )
-    const proto = entity.prototypeId
-      ? await this.repo.getById(prototypeTable, entity.prototypeId)
-      : undefined
-    // Snapshot the resolved style: the prototype's seed merged with entity + node overrides.
-    const style: Record<string, unknown> = {
-      ...(proto?.style ?? {}),
-      ...entity.styleOverride,
-      ...node.styleOverride,
-    }
+    // Snapshot the node's full style (§D3); do not relink the source entity (D9).
+    const style: Record<string, unknown> = { ...node.style }
     const shape =
       input.shape !== undefined
         ? input.shape
-        : (typeof style.shape === 'string' ? style.shape : proto?.shape ?? null)
+        : typeof style.shape === 'string'
+          ? style.shape
+          : null
     const prototype: Prototype = {
       ...this.stampNew(),
       graphId: entity.graphId,
@@ -858,10 +869,8 @@ export class LocalGateway implements DataGateway {
       name: input.name,
       shape,
       defaultLabel: node.label || entity.name,
-      // Carry the entity's referenced profile as the new prototype's default look.
-      styleProfileId: entity.styleProfileId ?? null,
       style,
-      metadata: { ...(proto?.metadata ?? {}), ...entity.metadata },
+      metadata: { ...entity.metadata },
       linkScaffold: entity.links.map((l) => ({ ...l })),
     }
     return this.commands.execute(
@@ -870,30 +879,27 @@ export class LocalGateway implements DataGateway {
   }
 
   async createPrototypeFromEdge(input: CreatePrototypeFromEdgeInput): Promise<Prototype> {
-    const edge = await this.require(await this.repo.getById(edgeTable, input.edgeId), 'edge', input.edgeId)
+    const edge = await this.require(
+      await this.repo.getById(edgeTable, input.edgeId),
+      'edge',
+      input.edgeId,
+    )
     const rel = await this.require(
       await this.repo.getById(relationshipTable, edge.relationshipId),
       'relationship',
       edge.relationshipId,
     )
-    const proto = rel.prototypeId
-      ? await this.repo.getById(prototypeTable, rel.prototypeId)
-      : undefined
-    const style: Record<string, unknown> = {
-      ...(proto?.style ?? {}),
-      ...rel.styleOverride,
-      ...edge.styleOverride,
-    }
+    // Snapshot the edge's full style (§D3); do not relink the source relationship (D9).
+    const style: Record<string, unknown> = { ...edge.style }
     const prototype: Prototype = {
       ...this.stampNew(),
       graphId: rel.graphId,
-      kind: 'relationship',
+      kind: 'edge',
       name: input.name,
       shape: null,
       defaultLabel: edge.label || rel.label,
-      styleProfileId: null,
       style,
-      metadata: { ...(proto?.metadata ?? {}), ...rel.metadata },
+      metadata: { ...rel.metadata },
       linkScaffold: [],
     }
     return this.commands.execute(
@@ -914,7 +920,6 @@ export class LocalGateway implements DataGateway {
       name: name ?? `${source.name} copy`,
       shape: source.shape,
       defaultLabel: source.defaultLabel,
-      styleProfileId: source.styleProfileId ?? null,
       style: { ...source.style },
       metadata: { ...source.metadata },
       linkScaffold: source.linkScaffold.map((l) => ({ ...l })),
@@ -924,6 +929,12 @@ export class LocalGateway implements DataGateway {
     )
   }
 
+  /**
+   * Re-copy a prototype's current `style` onto the nodes/edges linked to it
+   * (§9.2 — opt-in, never automatic). A node is "linked" when its entity's
+   * `nodePrototypeId` is this prototype; an edge when its relationship's
+   * `edgePrototypeId` is. Supply explicit node/edge ids or `all: true`.
+   */
   async refreshFromPrototype(
     input: RefreshFromPrototypeInput,
   ): Promise<RefreshFromPrototypeResult> {
@@ -933,42 +944,40 @@ export class LocalGateway implements DataGateway {
       input.prototypeId,
     )
     if (proto.kind === 'node') {
-      const all = await this.repo.list(entityTable, { graphId: proto.graphId })
-      const linked = all.filter((e) => e.prototypeId === proto.id)
+      const entities = (await this.repo.list(entityTable, { graphId: proto.graphId })).filter(
+        (e) => e.nodePrototypeId === proto.id,
+      )
+      const entityIds = new Set(entities.map((e) => e.id))
+      const linkedNodes = (await this.repo.list(nodeTable)).filter((n) => entityIds.has(n.entityId))
       const targets = input.all
-        ? linked
-        : linked.filter((e) => (input.ids ?? []).includes(e.id))
-      const updated = targets.map((e) =>
-        this.bumpVersion({
-          ...e,
-          styleOverride: { ...proto.style },
-          metadata: { ...proto.metadata },
-        }),
+        ? linkedNodes
+        : linkedNodes.filter((n) => (input.ids ?? []).includes(n.id))
+      const updated = targets.map((n) =>
+        this.bumpVersion({ ...n, style: { ...proto.style } }),
       )
       await this.commands.execute(
         command('refreshFromPrototype', async (m) => {
-          for (const e of updated) await m.put(entityTable, e)
+          for (const n of updated) await m.put(nodeTable, n)
         }),
       )
-      return { refreshed: updated.map((e) => e.id) }
+      return { refreshed: updated.map((n) => n.id) }
     }
-    // relationship prototype
-    const all = await this.repo.list(relationshipTable, { graphId: proto.graphId })
-    const linked = all.filter((r) => r.prototypeId === proto.id)
-    const targets = input.all ? linked : linked.filter((r) => (input.ids ?? []).includes(r.id))
-    const updated = targets.map((r) =>
-      this.bumpVersion({
-        ...r,
-        styleOverride: { ...proto.style },
-        metadata: { ...proto.metadata },
-      }),
-    )
+    // edge prototype
+    const relationships = (
+      await this.repo.list(relationshipTable, { graphId: proto.graphId })
+    ).filter((r) => r.edgePrototypeId === proto.id)
+    const relIds = new Set(relationships.map((r) => r.id))
+    const linkedEdges = (await this.repo.list(edgeTable)).filter((e) => relIds.has(e.relationshipId))
+    const targets = input.all
+      ? linkedEdges
+      : linkedEdges.filter((e) => (input.ids ?? []).includes(e.id))
+    const updated = targets.map((e) => this.bumpVersion({ ...e, style: { ...proto.style } }))
     await this.commands.execute(
       command('refreshFromPrototype', async (m) => {
-        for (const r of updated) await m.put(relationshipTable, r)
+        for (const e of updated) await m.put(edgeTable, e)
       }),
     )
-    return { refreshed: updated.map((r) => r.id) }
+    return { refreshed: updated.map((e) => e.id) }
   }
 
   async listPalettes(graphId: Uuid): Promise<Palette[]> {
@@ -1019,41 +1028,6 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(command('duplicatePalette', (m) => m.insert(paletteTable, palette)))
   }
 
-  async listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]> {
-    return this.repo.list(styleProfileTable, { graphId })
-  }
-
-  async createStyleProfile(graphId: Uuid, input: StyleProfileInput): Promise<StyleProfile> {
-    const styleProfile: StyleProfile = {
-      ...this.stampNew(),
-      graphId,
-      name: input.name,
-      target: input.target,
-      style: input.style ?? {},
-    }
-    return this.commands.execute(
-      command('createStyleProfile', (m) => m.insert(styleProfileTable, styleProfile)),
-    )
-  }
-
-  async updateStyleProfile(id: Uuid, patch: StyleProfilePatch): Promise<StyleProfile> {
-    const current = await this.require(
-      await this.repo.getById(styleProfileTable, id),
-      'styleProfile',
-      id,
-    )
-    const updated = this.bumpVersion(applyPatch(current, patch))
-    return this.commands.execute(
-      command('updateStyleProfile', (m) => m.put(styleProfileTable, updated)),
-    )
-  }
-
-  async deleteStyleProfile(id: Uuid): Promise<void> {
-    await this.commands.execute(
-      command('deleteStyleProfile', (m) => m.remove(styleProfileTable, { id })),
-    )
-  }
-
   // ── Undo / redo ───────────────────────────────────────────────────────────
   undo(): Promise<boolean> {
     return this.commands.undo()
@@ -1074,23 +1048,23 @@ export class LocalGateway implements DataGateway {
   // ── Project I/O ──────────────────────────────────────────────────────────
   async exportJson(graphId: Uuid): Promise<NodgeDocument> {
     const graph = await this.require(await this.repo.getById(graphTable, graphId), 'graph', graphId)
-    const boards = await this.repo.list(boardTable, { graphId })
-    const documentBoards = []
-    for (const board of boards) {
-      const views = await this.repo.list(viewTable, { boardId: board.id })
-      const documentViews = []
-      for (const view of views) {
-        const positions = await this.repo.list(nodePositionTable, { viewId: view.id })
-        documentViews.push({
-          ...view,
+    const diagrams = await this.repo.list(diagramTable, { graphId })
+    const documentDiagrams = []
+    for (const diagram of diagrams) {
+      const layouts = await this.repo.list(layoutTable, { diagramId: diagram.id })
+      const documentLayouts = []
+      for (const layout of layouts) {
+        const positions = await this.repo.list(nodePositionTable, { layoutId: layout.id })
+        documentLayouts.push({
+          ...layout,
           positions: positions.map((p) => ({ nodeId: p.nodeId, x: p.x, y: p.y })),
         })
       }
-      documentBoards.push({
-        ...board,
-        nodes: await this.repo.list(nodeTable, { boardId: board.id }),
-        edges: await this.repo.list(edgeTable, { boardId: board.id }),
-        views: documentViews,
+      documentDiagrams.push({
+        ...diagram,
+        nodes: await this.repo.list(nodeTable, { diagramId: diagram.id }),
+        edges: await this.repo.list(edgeTable, { diagramId: diagram.id }),
+        layouts: documentLayouts,
       })
     }
     return {
@@ -1099,9 +1073,8 @@ export class LocalGateway implements DataGateway {
       entities: await this.repo.list(entityTable, { graphId }),
       relationships: await this.repo.list(relationshipTable, { graphId }),
       prototypes: await this.repo.list(prototypeTable, { graphId }),
-      boards: documentBoards,
+      diagrams: documentDiagrams,
       palettes: await this.repo.list(paletteTable, { graphId }),
-      styleProfiles: await this.repo.list(styleProfileTable, { graphId }),
     }
   }
 

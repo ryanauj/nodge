@@ -18,9 +18,9 @@ describe('file round-trip', () => {
   it('exports a diagram and re-imports it into a fresh DB, rendering the same thing', async () => {
     const gw = await createMemoryGateway()
     const ids = await bootstrapOrOpen(gw, memoryStorage())
-    const a = await gw.addNode(ids.boardId, ids.viewId, { name: 'A', x: 10, y: 20 })
-    const b = await gw.addNode(ids.boardId, ids.viewId, { name: 'B', x: 200, y: 40 })
-    await gw.connectNodes(ids.boardId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 10, y: 20 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 200, y: 40 })
+    await gw.connectNodes(ids.diagramId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
 
     const before = await loadDiagram(gw, ids)
     const text = await exportGraphText(gw, ids.graphId)

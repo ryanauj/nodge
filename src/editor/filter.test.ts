@@ -14,9 +14,7 @@ function entity(id: string, patch: Partial<Entity> = {}): Entity {
     id,
     graphId: 'g',
     name: id,
-    prototypeId: null,
-    styleProfileId: null,
-    styleOverride: {},
+    nodePrototypeId: null,
     links: [],
     metadata: {},
     createdAt: 't',
@@ -28,11 +26,10 @@ function entity(id: string, patch: Partial<Entity> = {}): Entity {
 function node(id: string, entityId: string): Node {
   return {
     id,
-    boardId: 'b',
+    diagramId: 'b',
     entityId,
     label: id,
-    styleProfileId: null,
-    styleOverride: {},
+    style: {},
     createdAt: 't',
     updatedAt: 't',
     version: 1,
@@ -41,14 +38,14 @@ function node(id: string, entityId: string): Node {
 function edge(source: string, target: string): Edge {
   return {
     id: `e-${seq++}`,
-    boardId: 'b',
+    diagramId: 'b',
     relationshipId: `r-${source}-${target}`,
     sourceNodeId: source,
     targetNodeId: target,
     sourceHandle: null,
     targetHandle: null,
     label: '',
-    styleOverride: {},
+    style: {},
     createdAt: 't',
     updatedAt: 't',
     version: 1,
@@ -60,10 +57,9 @@ function rel(id: string, source: string, target: string): Relationship {
     graphId: 'g',
     sourceEntityId: source,
     targetEntityId: target,
-    prototypeId: null,
+    edgePrototypeId: null,
     directed: true,
     label: '',
-    styleOverride: {},
     metadata: {},
     createdAt: 't',
     updatedAt: 't',
@@ -77,8 +73,8 @@ function rel(id: string, source: string, target: string): Relationship {
  */
 function chain() {
   const entities = new Map<string, Entity>([
-    ['eX', entity('eX', { prototypeId: 'pBox' })],
-    ['eA', entity('eA', { prototypeId: 'pBox', metadata: { tier: 'backend' } })],
+    ['eX', entity('eX', { nodePrototypeId: 'pBox' })],
+    ['eA', entity('eA', { nodePrototypeId: 'pBox', metadata: { tier: 'backend' } })],
     ['eB', entity('eB', { metadata: { tier: 'frontend' } })],
     ['eC', entity('eC')],
   ])

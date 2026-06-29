@@ -24,10 +24,10 @@ async function renderApp() {
   return gw
 }
 
-async function activeBoardId(gw: LocalGateway): Promise<string> {
+async function activeDiagramId(gw: LocalGateway): Promise<string> {
   const graphs = await gw.listGraphs()
   const graph = await gw.getGraph(graphs[0].id)
-  return graph.boards[0].id
+  return graph.diagrams[0].id
 }
 
 describe('App (Phase 1 editor)', () => {
@@ -46,8 +46,8 @@ describe('App (Phase 1 editor)', () => {
     fireEvent.click(addButtons[0])
 
     await waitFor(async () => {
-      const board = await gw.getBoard(await activeBoardId(gw))
-      expect(board.nodes).toHaveLength(1)
+      const diagram = await gw.getDiagram(await activeDiagramId(gw))
+      expect(diagram.nodes).toHaveLength(1)
     })
   })
 })

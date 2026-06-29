@@ -1,5 +1,5 @@
 /**
- * Build a {@link Clipboard} payload from a selection of nodes on a board
+ * Build a {@link Clipboard} payload from a selection of nodes on a diagram
  * (spec §9.3, Decision 10). Copy/paste is *placement*: the clipboard records the
  * selected nodes referencing their **same** entities and the edges internal to
  * the selection referencing their **same** relationships. Pasting (see
@@ -11,21 +11,21 @@
  * touching the DOM clipboard; serializing to JSON enables cross-document paste.
  */
 
-import type { BoardDetail } from './types'
+import type { DiagramDetail } from './types'
 import type { Clipboard, ClipboardEdge, ClipboardNode, Uuid } from './types'
 
 /**
  * Capture the selected nodes + the edges whose endpoints are both selected.
- * `positions` provides each node's absolute position (from the active view);
+ * `positions` provides each node's absolute position (from the active layout);
  * the clipboard stores positions relative to the selection's top-left.
  */
 export function buildClipboard(
-  board: BoardDetail,
+  diagram: DiagramDetail,
   selectedNodeIds: Uuid[],
   positions: Map<Uuid, { x: number; y: number }>,
 ): Clipboard {
   const selected = new Set(selectedNodeIds)
-  const nodes = board.nodes.filter((n) => selected.has(n.id))
+  const nodes = diagram.nodes.filter((n) => selected.has(n.id))
 
   // Anchor = top-left of the selection so the paste origin places the cluster.
   let minX = Infinity
@@ -44,13 +44,13 @@ export function buildClipboard(
       refId: n.id,
       entityId: n.entityId,
       label: n.label,
-      styleOverride: { ...n.styleOverride },
+      style: { ...n.style },
       dx: p.x - minX,
       dy: p.y - minY,
     }
   })
 
-  const clipEdges: ClipboardEdge[] = board.edges
+  const clipEdges: ClipboardEdge[] = diagram.edges
     .filter((e) => selected.has(e.sourceNodeId) && selected.has(e.targetNodeId))
     .map((e) => ({
       relationshipId: e.relationshipId,
@@ -59,7 +59,7 @@ export function buildClipboard(
       sourceHandle: e.sourceHandle,
       targetHandle: e.targetHandle,
       label: e.label,
-      styleOverride: { ...e.styleOverride },
+      style: { ...e.style },
     }))
 
   return { kind: 'nodge/clipboard', version: 1, nodes: clipNodes, edges: clipEdges }
