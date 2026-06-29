@@ -218,3 +218,92 @@ describe('Phase 4 — old minimal palettes still load (§8.2)', () => {
     expect(full.elevation.low).toBe(DEFAULT_FULL_TOKENS.elevation.low)
   })
 })
+
+describe('Phase 4 — generateLayout: Dagre auto-arrange persists per-layout positions (§8, D8)', () => {
+  // Build a parent → two-children diagram and return ids for assertions.
+  async function seedTriangle(gw: LocalGateway) {
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const root = await gw.addNode(diagramId, layoutId, { name: 'root', x: 0, y: 0 })
+    const left = await gw.addNode(diagramId, layoutId, { name: 'left', x: 0, y: 0 })
+    const right = await gw.addNode(diagramId, layoutId, { name: 'right', x: 0, y: 0 })
+    await gw.connectNodes(diagramId, { sourceNodeId: root.node.id, targetNodeId: left.node.id })
+    await gw.connectNodes(diagramId, { sourceNodeId: root.node.id, targetNodeId: right.node.id })
+    return {
+      graphId,
+      diagramId,
+      layoutId,
+      rootId: root.node.id,
+      leftId: left.node.id,
+      rightId: right.node.id,
+    }
+  }
+
+  function positionsFor(detail: Awaited<ReturnType<LocalGateway['getDiagram']>>, layoutId: string) {
+    const layout = detail.layouts.find((l) => l.id === layoutId)!
+    return new Map(layout.positions.map((p) => [p.nodeId, p]))
+  }
+
+  it('bulk-upserts positions for the right layout and ranks the parent above children', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId, rootId, leftId, rightId } = await seedTriangle(gw)
+
+    const result = await gw.generateLayout(diagramId, layoutId)
+    expect(result.map((p) => p.nodeId).sort()).toEqual([rootId, leftId, rightId].sort())
+
+    const detail = await gw.getDiagram(diagramId)
+    const pos = positionsFor(detail, layoutId)
+    expect(pos.size).toBe(3)
+    // TB default: root sits above (smaller y than) both children.
+    expect(pos.get(rootId)!.y).toBeLessThan(pos.get(leftId)!.y)
+    expect(pos.get(rootId)!.y).toBeLessThan(pos.get(rightId)!.y)
+    // Children share a rank.
+    expect(pos.get(leftId)!.y).toBe(pos.get(rightId)!.y)
+  })
+
+  it("marks the layout's algorithm 'dagre'", async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId } = await seedTriangle(gw)
+    expect((await gw.getDiagram(diagramId)).layouts.find((l) => l.id === layoutId)!.algorithm).toBe(
+      'manual',
+    )
+    await gw.generateLayout(diagramId, layoutId)
+    expect((await gw.getDiagram(diagramId)).layouts.find((l) => l.id === layoutId)!.algorithm).toBe(
+      'dagre',
+    )
+  })
+
+  it('is deterministic — re-running yields identical positions', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId } = await seedTriangle(gw)
+    const first = await gw.generateLayout(diagramId, layoutId)
+    const second = await gw.generateLayout(diagramId, layoutId)
+    expect(second).toEqual(first)
+  })
+
+  it('is one undoable command (positions + algorithm revert together)', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId, rootId } = await seedTriangle(gw)
+
+    // Hand-place a known position first, so we can see undo restore it.
+    await gw.bulkUpsertPositions(layoutId, [{ nodeId: rootId, x: 11, y: 22 }])
+    const before = positionsFor(await gw.getDiagram(diagramId), layoutId).get(rootId)!
+    expect(before).toMatchObject({ x: 11, y: 22 })
+
+    await gw.generateLayout(diagramId, layoutId)
+    const moved = positionsFor(await gw.getDiagram(diagramId), layoutId).get(rootId)!
+    expect(moved.x === 11 && moved.y === 22).toBe(false)
+
+    // A single undo reverts both the positions and the algorithm flag.
+    expect(await gw.undo()).toBe(true)
+    const detail = await gw.getDiagram(diagramId)
+    expect(positionsFor(detail, layoutId).get(rootId)).toMatchObject({ x: 11, y: 22 })
+    expect(detail.layouts.find((l) => l.id === layoutId)!.algorithm).toBe('manual')
+  })
+
+  it('rejects a layout that does not belong to the diagram', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId } = await seedTriangle(gw)
+    const other = await seedTriangle(gw)
+    await expect(gw.generateLayout(diagramId, other.layoutId)).rejects.toThrow()
+  })
+})

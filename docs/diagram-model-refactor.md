@@ -213,7 +213,7 @@ Mirror the repo's pre-push rigor; update tests with each phase (TDD where practi
 - [x] 1. Model + DDL + document format
 - [x] 2. SQLite migration v4
 - [x] 3. Gateway (rename + behavior)
-- [ ] 4. Dagre auto-layout
+- [x] 4. Dagre auto-layout
 - [ ] 5. Style/diagram resolution
 - [ ] 6. Add-node EntityPicker
 - [ ] 7. Panels (style, prototypes, relationships, layout switcher)

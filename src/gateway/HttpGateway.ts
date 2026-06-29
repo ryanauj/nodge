@@ -50,6 +50,7 @@ import type {
   GraphDetail,
   GraphInput,
   GraphPatch,
+  GenerateLayoutOptions,
   LayoutInput,
   LayoutPatch,
   NodeInput,
@@ -185,6 +186,13 @@ export class HttpGateway implements DataGateway {
     positions: NodePositionInput[],
   ): Promise<NodePositionInput[]> {
     return this.local.bulkUpsertPositions(layoutId, positions)
+  }
+  generateLayout(
+    diagramId: Uuid,
+    layoutId: Uuid,
+    options?: GenerateLayoutOptions,
+  ): Promise<NodePositionInput[]> {
+    return this.local.generateLayout(diagramId, layoutId, options)
   }
   placeEntity(
     diagramId: Uuid,
