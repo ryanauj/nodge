@@ -65,6 +65,7 @@ import type {
   GraphDetail,
   GraphInput,
   GraphPatch,
+  GenerateLayoutOptions,
   LayoutDetail,
   LayoutInput,
   LayoutPatch,
@@ -444,6 +445,58 @@ export class LocalGateway implements DataGateway {
         for (const p of positions) {
           await m.put(nodePositionTable, { layoutId, nodeId: p.nodeId, x: p.x, y: p.y })
         }
+      }),
+    )
+    return positions
+  }
+
+  /**
+   * Auto-arrange (§8, D8): load the diagram's nodes + edges, compute positions
+   * with Dagre ({@link autoLayout}), bulk-upsert them onto `layoutId`, and mark
+   * the layout's algorithm `'dagre'` — all as a single undoable command.
+   * Deterministic for a fixed graph. Returns the upserted positions.
+   *
+   * Dagre is loaded lazily inside `autoLayout`, so it stays out of the
+   * first-paint bundle (its own code-split chunk).
+   */
+  async generateLayout(
+    diagramId: Uuid,
+    layoutId: Uuid,
+    options?: GenerateLayoutOptions,
+  ): Promise<NodePositionInput[]> {
+    await this.require(await this.repo.getById(diagramTable, diagramId), 'diagram', diagramId)
+    const layout = await this.require(
+      await this.repo.getById(layoutTable, layoutId),
+      'layout',
+      layoutId,
+    )
+    if (layout.diagramId !== diagramId) {
+      throw new Error(`layout ${layoutId} does not belong to diagram ${diagramId}`)
+    }
+
+    const nodes = await this.repo.list(nodeTable, { diagramId })
+    const edges = await this.repo.list(edgeTable, { diagramId })
+
+    const { autoLayout } = await import('../editor/autoLayout')
+    const computed = await autoLayout(
+      nodes.map((n) => ({ id: n.id })),
+      edges.map((e) => ({ sourceNodeId: e.sourceNodeId, targetNodeId: e.targetNodeId })),
+      { direction: options?.direction },
+    )
+
+    const positions: NodePositionInput[] = computed.map((p) => ({
+      nodeId: p.nodeId,
+      x: p.x,
+      y: p.y,
+    }))
+    const updatedLayout = this.bumpVersion(applyPatch(layout, { algorithm: 'dagre' }))
+
+    await this.commands.execute(
+      command('generateLayout', async (m) => {
+        for (const p of positions) {
+          await m.put(nodePositionTable, { layoutId, nodeId: p.nodeId, x: p.x, y: p.y })
+        }
+        await m.put(layoutTable, updatedLayout)
       }),
     )
     return positions

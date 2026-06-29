@@ -189,6 +189,12 @@ export interface NodePositionInput {
   y: number
 }
 
+/** Options for {@link DataGateway.generateLayout} — currently the Dagre direction. */
+export interface GenerateLayoutOptions {
+  /** Rank direction passed to Dagre. Defaults to `'TB'`. */
+  direction?: 'TB' | 'BT' | 'LR' | 'RL'
+}
+
 /**
  * Add a node to a diagram: create the base {@link Entity} and its {@link Node}
  * placement plus the per-layout position, as a single undoable command (spec §12
@@ -450,6 +456,16 @@ export interface DataGateway {
   /** Delete a layout and its per-layout positions, one command. */
   deleteLayout(id: Uuid): Promise<void>
   bulkUpsertPositions(layoutId: Uuid, positions: NodePositionInput[]): Promise<NodePositionInput[]>
+  /**
+   * Compute positions for a diagram's nodes with Dagre and bulk-upsert them onto
+   * `layoutId` (§8). Marks the layout's algorithm `'dagre'`. One undoable command;
+   * deterministic for a fixed graph. Returns the upserted positions.
+   */
+  generateLayout(
+    diagramId: Uuid,
+    layoutId: Uuid,
+    options?: GenerateLayoutOptions,
+  ): Promise<NodePositionInput[]>
   /** Place an existing entity as a new node + position on a diagram+layout (§7.1), one command. */
   placeEntity(
     diagramId: Uuid,
