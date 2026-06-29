@@ -56,6 +56,15 @@
   font: inherit;
 }
 
+/* Single-line panel fields are ≥44px touch targets (spec §10.2). The multi-row
+   textarea keeps its `rows`-based height. Inputs only grow, so this never
+   reflows existing layouts. */
+.panel-input,
+.panel-field input,
+.panel-field select {
+  min-height: 44px;
+}
+
 .panel-field {
   display: block;
   margin: 6px 0;

@@ -157,7 +157,11 @@ export function RelationshipsPanel({
               </button>
 
               {expanded && (
-                <div className="rel-drill" aria-label={`Drill-down for ${src} ${arrow} ${tgt}`}>
+                <div
+                  className="rel-drill"
+                  role="group"
+                  aria-label={`Drill-down for ${src} ${arrow} ${tgt}`}
+                >
                   <button
                     type="button"
                     className="rel-drill-btn"
