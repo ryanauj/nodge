@@ -29,6 +29,7 @@ describe('dockControls registry', () => {
         'panel:prototypes',
         'panel:palette',
         'panel:crossref',
+        'panel:relationships',
         'toggle:minimap',
         'toggle:background',
         'save',

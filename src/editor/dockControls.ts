@@ -61,6 +61,7 @@ const SHEET_ICONS: Record<SheetKey, string> = {
   prototypes: '◇',
   palette: '◐',
   crossref: '⇆',
+  relationships: '⇄',
 }
 
 /** Short visible labels for the panel openers (the full name is the ariaLabel). */
@@ -69,6 +70,7 @@ const SHEET_SHORT_LABELS: Record<SheetKey, string> = {
   prototypes: 'Protos',
   palette: 'Palette',
   crossref: 'Refs',
+  relationships: 'Rels',
 }
 
 /**
@@ -139,6 +141,7 @@ const DEFAULT_PLACEMENTS: Record<string, Placement> = {
   'panel:prototypes': 'expanded',
   'panel:palette': 'expanded',
   'panel:crossref': 'expanded',
+  'panel:relationships': 'expanded',
   'toggle:minimap': 'expanded',
   'toggle:background': 'expanded',
   save: 'expanded',

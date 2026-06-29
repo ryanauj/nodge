@@ -29,7 +29,13 @@ export const TOOL_MODE_LABELS: Record<ToolMode, string> = {
  * The transient bottom-sheet panels (spec §10.1): on a narrow viewport the side
  * panels become sheets, only one of which is open at a time. `null` = closed.
  */
-export const SHEET_KEYS = ['properties', 'prototypes', 'palette', 'crossref'] as const
+export const SHEET_KEYS = [
+  'properties',
+  'prototypes',
+  'palette',
+  'crossref',
+  'relationships',
+] as const
 export type SheetKey = (typeof SHEET_KEYS)[number]
 
 export const SHEET_LABELS: Record<SheetKey, string> = {
@@ -37,6 +43,7 @@ export const SHEET_LABELS: Record<SheetKey, string> = {
   prototypes: 'Prototypes',
   palette: 'Palette',
   crossref: 'Cross-reference',
+  relationships: 'Relationships',
 }
 
 interface ToolModeState {

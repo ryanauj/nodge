@@ -74,6 +74,7 @@ import { PaletteEditor } from './panels/PaletteEditor'
 import { NodeStylePanel } from './panels/NodeStylePanel'
 import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
+import { RelationshipsPanel } from './panels/RelationshipsPanel'
 import { QuickPicker } from './panels/QuickPicker'
 import { EntityPicker } from './panels/EntityPicker'
 import { BottomSheet } from './panels/BottomSheet'
@@ -205,7 +206,7 @@ function EditorCanvas() {
     nodePrototypes: Prototype[]
   } | null>(null)
 
-  const { screenToFlowPosition, setViewport, getViewport } = useReactFlow()
+  const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow()
 
   // Navigate to a board/view, persisting the current viewport first so each
   // view keeps its own pan/zoom (spec §7.2). The URL change re-resolves ids.
@@ -252,6 +253,19 @@ function EditorCanvas() {
     () => queryClient.invalidateQueries({ queryKey: ['diagram'] }),
     [queryClient],
   )
+
+  // After "Auto-arrange" recomputes positions (§8), refresh the canvas from the
+  // new layout and re-fit the view. Respect `prefers-reduced-motion`: animate the
+  // fitView transition only when motion is welcome, snap instantly otherwise.
+  const onLayoutGenerated = useCallback(async () => {
+    await invalidateDiagram()
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    void fitView({ duration: prefersReducedMotion ? 0 : 400 })
+    await refreshUndo()
+  }, [invalidateDiagram, fitView, refreshUndo])
 
   // Apply a palette as the app-chrome theme (spec §8.4) — the second PaletteRoot
   // boundary. Persists the pointer (localStorage, mirroring activeGraphId) and
@@ -661,6 +675,21 @@ function EditorCanvas() {
     [getGateway, navigateTo],
   )
 
+  // Reveal a relationship's backing edge on the canvas (RelationshipsPanel
+  // drill-down, §10/D7): mark that edge selected in React Flow state and reflect
+  // it in selection so the edge-style panel picks it up. Only meaningful when the
+  // edge is placed on the active diagram (the panel only offers it then).
+  const revealEdge = useCallback(
+    (edgeId: string) => {
+      setEdges((eds) => eds.map((e) => ({ ...e, selected: e.id === edgeId })))
+      setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)))
+      setSelectedEdgeId(edgeId)
+      setSelectedNodeId(null)
+      setSelectedEntityId(null)
+    },
+    [setEdges, setNodes],
+  )
+
   // Busy whenever the diagram is (re)fetching — not just the initial load — so
   // the "settling" indicator reflects background refetches after edits too.
   const busy = !ready || diagram.isFetching
@@ -693,6 +722,7 @@ function EditorCanvas() {
                 void queryClient.invalidateQueries({ queryKey: ['graph', ids.graphId] })
                 void queryClient.invalidateQueries({ queryKey: ['diagram-detail', ids.diagramId] })
               }}
+              onLayoutGenerated={() => void onLayoutGenerated()}
             />
             <PaletteSwitcher
               graphId={ids.graphId}
@@ -751,8 +781,22 @@ function EditorCanvas() {
             onNavigate={(kind, target) => void drillTo(kind, target)}
           />
         ) : null,
+        relationships: (
+          <RelationshipsPanel
+            graphId={ids.graphId}
+            diagramId={ids.diagramId}
+            onNavigateEntity={(entityId) => void drillTo('entity', entityId)}
+            onRevealEdge={(edgeId) => revealEdge(edgeId)}
+          />
+        ),
       }
-    : { palette: null, properties: null, prototypes: null, crossref: null }
+    : {
+        palette: null,
+        properties: null,
+        prototypes: null,
+        crossref: null,
+        relationships: null,
+      }
 
   // Which sheet tabs are populated (drives the toolbar's enabled tabs).
   const availableSheets = new Set<SheetKey>(

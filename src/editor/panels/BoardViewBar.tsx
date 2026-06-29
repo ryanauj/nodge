@@ -23,6 +23,12 @@ export interface BoardViewBarProps {
   onNavigate: (diagramId: Uuid, layoutId: Uuid) => void
   /** Called after a create so the parent can refresh caches. */
   onChanged?: () => void
+  /**
+   * Called after "Auto-arrange" recomputes the active layout's positions (§8) so
+   * the parent can refresh the canvas and re-fit the view. The parent is
+   * responsible for respecting `prefers-reduced-motion` when it animates fitView.
+   */
+  onLayoutGenerated?: () => void
 }
 
 export function BoardViewBar({
@@ -31,6 +37,7 @@ export function BoardViewBar({
   layoutId,
   onNavigate,
   onChanged,
+  onLayoutGenerated,
 }: BoardViewBarProps) {
   const getGateway = useGateway()
   const [newDiagramName, setNewDiagramName] = useState('')
@@ -79,6 +86,20 @@ export function BoardViewBar({
       setNewLayoutName('')
       await afterChange()
       onNavigate(diagramId, layout.id)
+    },
+  })
+
+  // Auto-arrange (§8 / D8): recompute the ACTIVE layout's positions with Dagre
+  // (default TB) and let the parent re-render React Flow from them. One undoable
+  // command; the button shows a busy/disabled state while it runs.
+  const autoArrange = useMutation({
+    mutationFn: async () => {
+      const gw = await getGateway()
+      return gw.generateLayout(diagramId, layoutId)
+    },
+    onSuccess: async () => {
+      await afterChange()
+      onLayoutGenerated?.()
     },
   })
 
@@ -152,6 +173,17 @@ export function BoardViewBar({
           onClick={() => createLayout.mutate(newLayoutName.trim())}
         >
           Add layout
+        </button>
+      </div>
+      <div className="panel-actions">
+        <button
+          className="auto-arrange-btn"
+          aria-label="Auto-arrange layout"
+          aria-busy={autoArrange.isPending}
+          disabled={autoArrange.isPending}
+          onClick={() => autoArrange.mutate()}
+        >
+          {autoArrange.isPending ? 'Arranging…' : 'Auto-arrange'}
         </button>
       </div>
     </section>
