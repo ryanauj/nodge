@@ -204,7 +204,7 @@ export function PrototypePanel({
       </div>
 
       <div role="tabpanel" id={panelId} aria-labelledby={`${baseId}-tab-${kind}`}>
-        <ul className="panel-list" aria-label={KIND_LABEL[kind]}>
+        <ul className="panel-list proto-list" aria-label={KIND_LABEL[kind]}>
           {filtered.map((p) => (
             <li key={p.id} className="panel-list-item">
               <span className="proto-name">{p.name}</span>

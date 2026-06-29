@@ -35,6 +35,8 @@ export interface FlowNode {
   type: 'nodge'
   position: { x: number; y: number }
   data: FlowNodeData
+  /** React Flow selection flag — set programmatically to reveal/deselect a node. */
+  selected?: boolean
 }
 
 export interface FlowEdge {
@@ -43,6 +45,8 @@ export interface FlowEdge {
   target: string
   label?: string
   style: ResolvedEdgeStyle
+  /** React Flow selection flag — set programmatically to reveal an edge (§10/D7). */
+  selected?: boolean
 }
 
 export function toFlowNodes(src: DiagramSource): FlowNode[] {

@@ -56,6 +56,15 @@
   font: inherit;
 }
 
+/* Single-line panel fields are ≥44px touch targets (spec §10.2). The multi-row
+   textarea keeps its `rows`-based height. Inputs only grow, so this never
+   reflows existing layouts. */
+.panel-input,
+.panel-field input,
+.panel-field select {
+  min-height: 44px;
+}
+
 .panel-field {
   display: block;
   margin: 6px 0;
@@ -322,8 +331,9 @@
 }
 
 /* Prototype list rows + their action buttons are ≥44px tap targets and wrap so
-   they never overflow a 320px-wide panel. */
-.panel-list[aria-label$='prototypes'] .panel-list-item {
+   they never overflow a 320px-wide panel. Keyed off a stable `.proto-list` class
+   (not the localizable aria-label) so a rename never silently drops the styling. */
+.proto-list .panel-list-item {
   flex-wrap: wrap;
   min-height: 44px;
 }
@@ -342,6 +352,75 @@
 .proto-buttons button,
 .panel-actions .refresh-proto-btn,
 .panel-actions button {
+  min-height: 44px;
+}
+
+/* ── Phase 7b: RelationshipsPanel (§10 / D7) + Auto-arrange (§8).
+   The browsable relationships list: every row + drill-down control is a real
+   ≥44px tap target that wraps rather than overflowing a 320px panel; nothing is
+   hover-only. The focus-visible rings come from the palette (rule below). ── */
+.auto-arrange-btn {
+  min-height: 44px;
+  width: 100%;
+}
+
+.rel-list {
+  gap: 6px;
+}
+
+.rel-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.rel-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  text-align: left;
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  background: var(--nodge-surface-sunken, #f4f4f6);
+  color: inherit;
+  cursor: pointer;
+}
+
+.rel-endpoints {
+  flex: 1 1 60%;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--nodge-content-secondary, #666);
+}
+
+.rel-proto,
+.rel-label,
+.rel-metacount {
+  white-space: nowrap;
+}
+
+.rel-drill {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+
+.rel-drill-btn {
+  flex: 1 1 auto;
   min-height: 44px;
 }
 
