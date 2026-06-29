@@ -115,6 +115,98 @@ describe('Phase 2 — node↔prototype snapshot + refresh (§9.2)', () => {
     const untouched = detail.nodes.find((x) => x.id === other.node.id)
     expect(untouched?.style).toEqual({ surface: '#orig' })
   })
+
+  it('refresh by explicit ids only touches the named nodes (and returns them)', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const proto = await gw.createPrototype(graphId, {
+      kind: 'node',
+      name: 'Service',
+      style: { surface: '#aaa' },
+    })
+    const e1 = await gw.addNode(diagramId, layoutId, { name: 'a', x: 0, y: 0, nodePrototypeId: proto.id })
+    const e2 = await gw.addNode(diagramId, layoutId, { name: 'b', x: 1, y: 1, nodePrototypeId: proto.id })
+    await gw.updatePrototype(proto.id, { style: { surface: '#fff' } })
+
+    const result = await gw.refreshFromPrototype({ prototypeId: proto.id, ids: [e1.node.id] })
+    expect(result.refreshed).toEqual([e1.node.id])
+
+    const detail = await gw.getDiagram(diagramId)
+    expect(detail.nodes.find((n) => n.id === e1.node.id)?.style).toEqual({ surface: '#fff' })
+    // e2 is linked but was not named — left on its snapshot.
+    expect(detail.nodes.find((n) => n.id === e2.node.id)?.style).toEqual({ surface: '#aaa' })
+  })
+
+  it('refresh works for an edge prototype (all + ids), diagram membership traced, one undo', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const edgeProto = await gw.createPrototype(graphId, {
+      kind: 'edge',
+      name: 'Calls',
+      style: { stroke: '#111' },
+    })
+    const a = await gw.addNode(diagramId, layoutId, { name: 'a', x: 0, y: 0 })
+    const b = await gw.addNode(diagramId, layoutId, { name: 'b', x: 1, y: 1 })
+    const c = await gw.addNode(diagramId, layoutId, { name: 'c', x: 2, y: 2 })
+    const e1 = await gw.connectNodes(diagramId, {
+      sourceNodeId: a.node.id,
+      targetNodeId: b.node.id,
+      edgePrototypeId: edgeProto.id,
+    })
+    const e2 = await gw.connectNodes(diagramId, {
+      sourceNodeId: b.node.id,
+      targetNodeId: c.node.id,
+      edgePrototypeId: edgeProto.id,
+    })
+    expect(e1.edge.style).toMatchObject({ stroke: '#111' }) // edge snapshot-on-create
+
+    await gw.updatePrototype(edgeProto.id, { style: { stroke: '#999' } })
+
+    // Selective: only e1.
+    const sel = await gw.refreshFromPrototype({ prototypeId: edgeProto.id, ids: [e1.edge.id] })
+    expect(sel.refreshed).toEqual([e1.edge.id])
+    let detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e1.edge.id)?.style).toEqual({ stroke: '#999' })
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#111' })
+
+    // All: both edges of the prototype, as one undoable command.
+    const all = await gw.refreshFromPrototype({ prototypeId: edgeProto.id, all: true })
+    expect(all.refreshed.sort()).toEqual([e1.edge.id, e2.edge.id].sort())
+    detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#999' })
+
+    expect(await gw.undo()).toBe(true)
+    detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#111' })
+  })
+
+  it('createPrototypeFromNode / FromEdge do not relink the source (D9)', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId } = await newGraph(gw)
+    const node = await gw.addNode(diagramId, layoutId, {
+      name: 'N',
+      x: 0,
+      y: 0,
+      style: { surface: '#abc' },
+    })
+    const a = await gw.addNode(diagramId, layoutId, { name: 'A', x: 5, y: 5 })
+    const conn = await gw.connectNodes(diagramId, {
+      sourceNodeId: node.node.id,
+      targetNodeId: a.node.id,
+    })
+
+    const nodeProto = await gw.createPrototypeFromNode({ nodeId: node.node.id, name: 'P' })
+    const edgeProto = await gw.createPrototypeFromEdge({ edgeId: conn.edge.id, name: 'E' })
+
+    const graph = await gw.getGraph(node.entity.graphId)
+    const entity = graph.entities.find((e) => e.id === node.entity.id)
+    const rel = graph.relationships.find((r) => r.id === conn.relationship.id)
+    // The new prototypes captured the look but the source links are unchanged (null).
+    expect(nodeProto.style).toMatchObject({ surface: '#abc' })
+    expect(entity?.nodePrototypeId).toBeNull()
+    expect(rel?.edgePrototypeId).toBeNull()
+    expect(edgeProto.kind).toBe('edge')
+  })
 })
 
 describe('Phase 2 — cross-reference index (§7.4)', () => {

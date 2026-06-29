@@ -377,9 +377,17 @@ export class LocalGateway implements DataGateway {
     return this.commands.execute(command('updateLayout', (m) => m.put(layoutTable, updated)))
   }
 
-  /** Delete a layout and its per-layout positions as a single undoable command. */
+  /**
+   * Delete a layout and its per-layout positions as a single undoable command.
+   * A diagram must always keep ≥1 layout (§D2), so deleting the diagram's last
+   * remaining layout is rejected.
+   */
   async deleteLayout(id: Uuid): Promise<void> {
-    await this.require(await this.repo.getById(layoutTable, id), 'layout', id)
+    const layout = await this.require(await this.repo.getById(layoutTable, id), 'layout', id)
+    const siblings = await this.repo.list(layoutTable, { diagramId: layout.diagramId })
+    if (siblings.length <= 1) {
+      throw new Error(`cannot delete the last layout of diagram ${layout.diagramId}`)
+    }
     const positions = await this.repo.list(nodePositionTable, { layoutId: id })
     await this.commands.execute(
       command('deleteLayout', async (m) => {
@@ -407,12 +415,15 @@ export class LocalGateway implements DataGateway {
       'entity',
       input.entityId,
     )
+    // Snapshot the entity's linked NodePrototype style onto the new placement (§D3),
+    // letting an explicit `input.style` override individual keys.
+    const seed = await this.seedFromPrototype(entity.nodePrototypeId, input.style)
     const node: Node = {
       ...this.stampNew(),
       diagramId,
       entityId: entity.id,
       label: input.label ?? '',
-      style: input.style ?? {},
+      style: seed.style,
     }
     const position = { layoutId, nodeId: node.id, x: input.x, y: input.y }
     return this.commands.execute(

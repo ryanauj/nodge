@@ -68,6 +68,41 @@ describe('Phase 3 — the same entity appears on two diagrams (§7.1)', () => {
     expect(posB).toMatchObject({ x: 50, y: 60 })
   })
 
+  it('placeEntity snapshots the entity NodePrototype style onto the new node (§D3)', async () => {
+    const gw = await createMemoryGateway(deterministicDeps())
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const proto = await gw.createPrototype(graphId, {
+      kind: 'node',
+      name: 'Service',
+      style: { surface: '#eef', shape: 'pill' },
+    })
+    const added = await gw.addNode(diagramId, layoutId, {
+      name: 'Shared',
+      x: 0,
+      y: 0,
+      nodePrototypeId: proto.id,
+    })
+    const diagram2 = await gw.createDiagram(graphId, { name: 'D2' })
+    const layout2 = await gw.createLayout(diagram2.id, { name: 'L2' })
+
+    const placed = await gw.placeEntity(diagram2.id, layout2.id, {
+      entityId: added.entity.id,
+      x: 10,
+      y: 10,
+    })
+    // The new placement copies the linked prototype's style snapshot.
+    expect(placed.node.style).toMatchObject({ surface: '#eef', shape: 'pill' })
+
+    // An explicit input.style overrides individual snapshot keys.
+    const placedPinned = await gw.placeEntity(diagram2.id, layout2.id, {
+      entityId: added.entity.id,
+      x: 20,
+      y: 20,
+      style: { surface: '#000' },
+    })
+    expect(placedPinned.node.style).toMatchObject({ surface: '#000', shape: 'pill' })
+  })
+
   it('placeEntity is one undoable command (node + position revert together)', async () => {
     const gw = await createMemoryGateway()
     const { graphId, diagramId, layoutId } = await newGraph(gw)
@@ -211,6 +246,45 @@ describe('Phase 3 — delete diagram / layout are single undoable commands (§7.
     detail = await gw.getDiagram(diagramId)
     const restored = detail.layouts.find((l) => l.id === layout2.id)
     expect(restored?.positions).toHaveLength(1)
+  })
+
+  it('cannot delete the last layout of a diagram (§D2: a diagram keeps ≥1 layout)', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId } = await newGraph(gw)
+    // Only one layout exists → deletion is rejected.
+    await expect(gw.deleteLayout(layoutId)).rejects.toThrow(/last layout/)
+
+    // Add a second → now deleting one is allowed, leaving exactly one behind.
+    const layout2 = await gw.createLayout(diagramId, { name: 'Layout 2' })
+    await gw.deleteLayout(layout2.id)
+    const detail = await gw.getDiagram(diagramId)
+    expect(detail.layouts).toHaveLength(1)
+    expect(detail.layouts[0].id).toBe(layoutId)
+
+    // The remaining sole layout still cannot be removed.
+    await expect(gw.deleteLayout(layoutId)).rejects.toThrow(/last layout/)
+  })
+
+  it('layout CRUD: create / update (rename, algorithm, viewport) round-trips', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId } = await newGraph(gw)
+    const layout = await gw.createLayout(diagramId, { name: 'Auto', algorithm: 'dagre' })
+    expect(layout.algorithm).toBe('dagre')
+
+    const renamed = await gw.updateLayout(layout.id, {
+      name: 'Renamed',
+      algorithm: 'manual',
+      viewport: { x: 1, y: 2, zoom: 3 },
+    })
+    expect(renamed.name).toBe('Renamed')
+    expect(renamed.algorithm).toBe('manual')
+    expect(renamed.viewport).toEqual({ x: 1, y: 2, zoom: 3 })
+
+    // updateLayout is a single undoable command.
+    expect(await gw.undo()).toBe(true)
+    const after = (await gw.getDiagram(diagramId)).layouts.find((l) => l.id === layout.id)
+    expect(after?.name).toBe('Auto')
+    expect(after?.viewport).toBeNull()
   })
 })
 
