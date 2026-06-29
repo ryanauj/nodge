@@ -1,6 +1,8 @@
 # Design: Diagram / Layout / Prototype refactor
 
-> **Status:** Approved design, not yet implemented.
+> **Status:** Implemented — phases 1–8 merged (PRs #14–#21). Automated gate green
+> (typecheck + lint + test + build + Playwright e2e); the §12 `pnpm dev` manual smoke is
+> mapped to automated coverage, with the remaining visual-flow items flagged for a human pass.
 > **Purpose:** Drive a multi-session refactor. This document is self-contained — a fresh
 > session should be able to execute it without prior chat context. Companion to
 > `docs/flow-diagram-editor-spec.md` (the original spec); where they disagree, **this document
@@ -217,7 +219,7 @@ Mirror the repo's pre-push rigor; update tests with each phase (TDD where practi
 - [x] 5. Style/diagram resolution
 - [x] 6. Add-node EntityPicker
 - [x] 7. Panels (style, prototypes, relationships, layout switcher)
-- [ ] 8. Full gate + manual smoke
+- [x] 8. Full gate + manual smoke (automated gate green; §12 visual flows flagged for a human `pnpm dev` pass)
 
 ## Out of scope (separate follow-ups)
 - General **querying** over entities/relationships (will build on `src/editor/filter.ts`).
