@@ -21,13 +21,13 @@ function deterministicDeps(prefix: string): GatewayDeps {
 /** A scenario written ONCE against the interface, run against either gateway. */
 async function buildAndRead(gw: DataGateway) {
   const graph = await gw.createGraph({ name: 'Proof', description: 'same interface' })
-  const board = await gw.createBoard(graph.id, { name: 'Board' })
-  const view = await gw.createView(board.id, { name: 'View' })
-  const a = await gw.addNode(board.id, view.id, { name: 'A', x: 0, y: 0 })
-  const b = await gw.addNode(board.id, view.id, { name: 'B', x: 100, y: 0 })
-  await gw.connectNodes(board.id, { sourceNodeId: a.node.id, targetNodeId: b.node.id, label: 'calls' })
+  const diagram = await gw.createDiagram(graph.id, { name: 'Diagram' })
+  const layout = await gw.createLayout(diagram.id, { name: 'Layout' })
+  const a = await gw.addNode(diagram.id, layout.id, { name: 'A', x: 0, y: 0 })
+  const b = await gw.addNode(diagram.id, layout.id, { name: 'B', x: 100, y: 0 })
+  await gw.connectNodes(diagram.id, { sourceNodeId: a.node.id, targetNodeId: b.node.id, label: 'calls' })
 
-  const detail = await gw.getBoard(board.id)
+  const detail = await gw.getDiagram(diagram.id)
   return {
     graphName: graph.name,
     nodeCount: detail.nodes.length,

@@ -1,9 +1,9 @@
 /**
- * Boards / views switcher (spec §7.1–7.3, §12 Phase 3).
+ * Diagrams / layouts switcher (spec §7.1–7.3, §12 Phase 3).
  *
- * Lists the graph's boards and the active board's views, lets the user switch
- * between them (navigation is wired through React Router by the parent via
- * `onNavigate`), and create new boards/views. Every mutation goes through the
+ * Lists the graph's diagrams and the active diagram's layouts, lets the user
+ * switch between them (navigation is wired through React Router by the parent via
+ * `onNavigate`), and create new diagrams/layouts. Every mutation goes through the
  * gateway (the single data seam); creation is one undoable command each.
  *
  * Kept presentational + gateway-driven so it is component-testable with a real
@@ -17,138 +17,141 @@ import type { Uuid } from '../../gateway'
 
 export interface BoardViewBarProps {
   graphId: Uuid
-  boardId: Uuid
-  viewId: Uuid
-  /** Switch the active board+view (navigates the URL). */
-  onNavigate: (boardId: Uuid, viewId: Uuid) => void
+  diagramId: Uuid
+  layoutId: Uuid
+  /** Switch the active diagram+layout (navigates the URL). */
+  onNavigate: (diagramId: Uuid, layoutId: Uuid) => void
   /** Called after a create so the parent can refresh caches. */
   onChanged?: () => void
 }
 
-export function BoardViewBar({ graphId, boardId, viewId, onNavigate, onChanged }: BoardViewBarProps) {
+export function BoardViewBar({
+  graphId,
+  diagramId,
+  layoutId,
+  onNavigate,
+  onChanged,
+}: BoardViewBarProps) {
   const getGateway = useGateway()
-  const [newBoardName, setNewBoardName] = useState('')
-  const [newViewName, setNewViewName] = useState('')
+  const [newDiagramName, setNewDiagramName] = useState('')
+  const [newLayoutName, setNewLayoutName] = useState('')
 
   const graph = useQuery({
     queryKey: ['graph', graphId],
     queryFn: async () => (await getGateway()).getGraph(graphId),
   })
 
-  const board = useQuery({
-    queryKey: ['board', boardId],
-    queryFn: async () => (await getGateway()).getBoard(boardId),
+  const diagram = useQuery({
+    queryKey: ['diagram-detail', diagramId],
+    queryFn: async () => (await getGateway()).getDiagram(diagramId),
   })
 
-  const boards = useMemo(() => graph.data?.boards ?? [], [graph.data])
-  const views = useMemo(() => board.data?.views ?? [], [board.data])
+  const diagrams = useMemo(() => graph.data?.diagrams ?? [], [graph.data])
+  const layouts = useMemo(() => diagram.data?.layouts ?? [], [diagram.data])
 
   const afterChange = async () => {
     await graph.refetch()
-    await board.refetch()
+    await diagram.refetch()
     onChanged?.()
   }
 
-  const createBoard = useMutation({
+  const createDiagram = useMutation({
     mutationFn: async (name: string) => {
       const gw = await getGateway()
-      const created = await gw.createBoard(graphId, { name })
-      // A board needs at least one view to be navigable; seed one, inheriting
-      // the current view's palette so the new board has a consistent look.
-      const paletteId = views.find((v) => v.id === viewId)?.paletteId ?? null
-      const view = await gw.createView(created.id, { name: 'View 1', paletteId })
-      return { boardId: created.id, viewId: view.id }
+      const created = await gw.createDiagram(graphId, { name })
+      // A diagram needs at least one layout to be navigable; seed one.
+      const layout = await gw.createLayout(created.id, { name: 'Layout 1' })
+      return { diagramId: created.id, layoutId: layout.id }
     },
-    onSuccess: async ({ boardId: b, viewId: v }) => {
-      setNewBoardName('')
+    onSuccess: async ({ diagramId: d, layoutId: l }) => {
+      setNewDiagramName('')
       await afterChange()
-      onNavigate(b, v)
+      onNavigate(d, l)
     },
   })
 
-  const createView = useMutation({
+  const createLayout = useMutation({
     mutationFn: async (name: string) => {
       const gw = await getGateway()
-      const palette = views.find((v) => v.id === viewId)?.paletteId ?? null
-      return gw.createView(boardId, { name, paletteId: palette })
+      return gw.createLayout(diagramId, { name })
     },
-    onSuccess: async (view) => {
-      setNewViewName('')
+    onSuccess: async (layout) => {
+      setNewLayoutName('')
       await afterChange()
-      onNavigate(boardId, view.id)
+      onNavigate(diagramId, layout.id)
     },
   })
 
   return (
-    <section className="panel" aria-label="Boards and views">
-      <h2 className="panel-title">Boards</h2>
-      <ul className="panel-list" aria-label="Board list">
-        {boards.map((b) => (
-          <li key={b.id} className="panel-list-item">
+    <section className="panel" aria-label="Diagrams and layouts">
+      <h2 className="panel-title">Diagrams</h2>
+      <ul className="panel-list" aria-label="Diagram list">
+        {diagrams.map((d) => (
+          <li key={d.id} className="panel-list-item">
             <button
-              aria-label={`Open board ${b.name}`}
-              aria-current={b.id === boardId ? 'true' : undefined}
-              className={b.id === boardId ? 'switch-active' : undefined}
+              aria-label={`Open diagram ${d.name}`}
+              aria-current={d.id === diagramId ? 'true' : undefined}
+              className={d.id === diagramId ? 'switch-active' : undefined}
               onClick={() => {
-                if (b.id !== boardId) {
-                  // Resolve to the board's first view on switch (parent re-reads).
+                if (d.id !== diagramId) {
+                  // Resolve to the diagram's first layout on switch (parent re-reads).
                   void (async () => {
-                    const detail = await (await getGateway()).getBoard(b.id)
-                    const first = detail.views[0]
-                    if (first) onNavigate(b.id, first.id)
+                    const detail = await (await getGateway()).getDiagram(d.id)
+                    const first = detail.layouts[0]
+                    if (first) onNavigate(d.id, first.id)
                   })()
                 }
               }}
             >
-              {b.name}
+              {d.name}
             </button>
           </li>
         ))}
       </ul>
       <div className="panel-actions">
         <input
-          aria-label="New board name"
-          placeholder="New board"
-          value={newBoardName}
-          onChange={(e) => setNewBoardName(e.target.value)}
+          aria-label="New diagram name"
+          placeholder="New diagram"
+          value={newDiagramName}
+          onChange={(e) => setNewDiagramName(e.target.value)}
         />
         <button
-          aria-label="Create board"
-          disabled={!newBoardName.trim()}
-          onClick={() => createBoard.mutate(newBoardName.trim())}
+          aria-label="Create diagram"
+          disabled={!newDiagramName.trim()}
+          onClick={() => createDiagram.mutate(newDiagramName.trim())}
         >
-          Add board
+          Add diagram
         </button>
       </div>
 
-      <h3 className="panel-subtitle">Views</h3>
-      <ul className="panel-list" aria-label="View list">
-        {views.map((v) => (
-          <li key={v.id} className="panel-list-item">
+      <h3 className="panel-subtitle">Layouts</h3>
+      <ul className="panel-list" aria-label="Layout list">
+        {layouts.map((l) => (
+          <li key={l.id} className="panel-list-item">
             <button
-              aria-label={`Open view ${v.name}`}
-              aria-current={v.id === viewId ? 'true' : undefined}
-              className={v.id === viewId ? 'switch-active' : undefined}
-              onClick={() => v.id !== viewId && onNavigate(boardId, v.id)}
+              aria-label={`Open layout ${l.name}`}
+              aria-current={l.id === layoutId ? 'true' : undefined}
+              className={l.id === layoutId ? 'switch-active' : undefined}
+              onClick={() => l.id !== layoutId && onNavigate(diagramId, l.id)}
             >
-              {v.name}
+              {l.name}
             </button>
           </li>
         ))}
       </ul>
       <div className="panel-actions">
         <input
-          aria-label="New view name"
-          placeholder="New view"
-          value={newViewName}
-          onChange={(e) => setNewViewName(e.target.value)}
+          aria-label="New layout name"
+          placeholder="New layout"
+          value={newLayoutName}
+          onChange={(e) => setNewLayoutName(e.target.value)}
         />
         <button
-          aria-label="Create view"
-          disabled={!newViewName.trim()}
-          onClick={() => createView.mutate(newViewName.trim())}
+          aria-label="Create layout"
+          disabled={!newLayoutName.trim()}
+          onClick={() => createLayout.mutate(newLayoutName.trim())}
         >
-          Add view
+          Add layout
         </button>
       </div>
     </section>

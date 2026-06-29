@@ -29,8 +29,8 @@ describe('bootstrapOrOpen', () => {
 
     const ids = await bootstrapOrOpen(gw, storage)
     expect(ids.graphId).toBeTruthy()
-    expect(ids.boardId).toBeTruthy()
-    expect(ids.viewId).toBeTruthy()
+    expect(ids.diagramId).toBeTruthy()
+    expect(ids.layoutId).toBeTruthy()
     expect(ids.paletteId).toBeTruthy()
     expect(storage.getItem(ACTIVE_GRAPH_KEY)).toBe(ids.graphId)
 
@@ -47,8 +47,8 @@ describe('bootstrapOrOpen', () => {
     const second = await bootstrapOrOpen(gw, storage)
 
     expect(second.graphId).toBe(first.graphId)
-    expect(second.boardId).toBe(first.boardId)
-    expect(second.viewId).toBe(first.viewId)
+    expect(second.diagramId).toBe(first.diagramId)
+    expect(second.layoutId).toBe(first.layoutId)
     expect(await gw.listGraphs()).toHaveLength(1) // not duplicated
   })
 
@@ -64,19 +64,20 @@ describe('bootstrapOrOpen', () => {
 })
 
 describe('createDefaultDiagram', () => {
-  it('wires the view to the seeded palette', async () => {
+  it('seeds a diagram with at least one layout', async () => {
     const gw = await createMemoryGateway()
     const ids = await createDefaultDiagram(gw)
-    const board = await gw.getBoard(ids.boardId)
-    expect(board.views[0].paletteId).toBe(ids.paletteId)
+    const diagram = await gw.getDiagram(ids.diagramId)
+    expect(diagram.layouts.some((l) => l.id === ids.layoutId)).toBe(true)
+    expect(ids.paletteId).toBeTruthy()
   })
 
-  it('seeds built-in node and relationship prototypes (§9.1)', async () => {
+  it('seeds built-in node and edge prototypes (§9.1)', async () => {
     const gw = await createMemoryGateway()
     const ids = await createDefaultDiagram(gw)
     const protos = await gw.listPrototypes(ids.graphId)
     expect(protos.some((p) => p.kind === 'node')).toBe(true)
-    expect(protos.some((p) => p.kind === 'relationship')).toBe(true)
+    expect(protos.some((p) => p.kind === 'edge')).toBe(true)
     expect(protos.some((p) => p.name === 'Service')).toBe(true)
   })
 })

@@ -7,11 +7,11 @@ import type { LocalGateway } from '../../gateway/LocalGateway'
 
 async function seedEntityOnTwoNodes(gw: LocalGateway) {
   const graph = await gw.createGraph({ name: 'G' })
-  const board = await gw.createBoard(graph.id, { name: 'Board 1' })
-  const view = await gw.createView(board.id, { name: 'V' })
-  const added = await gw.addNode(board.id, view.id, { name: 'Service', x: 0, y: 0 })
+  const diagram = await gw.createDiagram(graph.id, { name: 'Board 1' })
+  const layout = await gw.createLayout(diagram.id, { name: 'V' })
+  const added = await gw.addNode(diagram.id, layout.id, { name: 'Service', x: 0, y: 0 })
   // Second placement of the same entity.
-  await gw.createNode(board.id, { entityId: added.entity.id, label: 'second' })
+  await gw.createNode(diagram.id, { entityId: added.entity.id, label: 'second' })
   return { graphId: graph.id, entityId: added.entity.id }
 }
 

@@ -17,24 +17,20 @@ import { SyncEngine, type SyncResult } from '../sync/SyncEngine'
 import type { SyncTransport } from '../sync/transport'
 import type { AsyncSqlite } from '../db/sqlite'
 import type {
-  Board,
+  Diagram,
   Edge,
   Entity,
   Graph,
+  Layout,
   Node,
   Palette,
   Prototype,
   Relationship,
-  StyleProfile,
-  View,
 } from '../model'
 import type { NodgeDocument } from '../model/document'
 import type {
   AddNodeInput,
   AddNodeResult,
-  BoardDetail,
-  BoardInput,
-  BoardPatch,
   ConnectNodesInput,
   ConnectNodesResult,
   ConnectToEntityResult,
@@ -43,6 +39,9 @@ import type {
   CreatePrototypeFromEdgeInput,
   CreatePrototypeFromNodeInput,
   DataGateway,
+  DiagramDetail,
+  DiagramInput,
+  DiagramPatch,
   EdgeInput,
   EdgePatch,
   EntityInput,
@@ -51,6 +50,8 @@ import type {
   GraphDetail,
   GraphInput,
   GraphPatch,
+  LayoutInput,
+  LayoutPatch,
   NodeInput,
   NodePatch,
   NodePositionInput,
@@ -66,11 +67,7 @@ import type {
   RefreshFromPrototypeResult,
   RelationshipInput,
   RelationshipPatch,
-  StyleProfileInput,
-  StyleProfilePatch,
   Uuid,
-  ViewInput,
-  ViewPatch,
 } from './types'
 
 export class HttpGateway implements DataGateway {
@@ -144,20 +141,20 @@ export class HttpGateway implements DataGateway {
     return this.local.deleteRelationship(id)
   }
 
-  createBoard(graphId: Uuid, input: BoardInput): Promise<Board> {
-    return this.local.createBoard(graphId, input)
+  createDiagram(graphId: Uuid, input: DiagramInput): Promise<Diagram> {
+    return this.local.createDiagram(graphId, input)
   }
-  getBoard(id: Uuid): Promise<BoardDetail> {
-    return this.local.getBoard(id)
+  getDiagram(id: Uuid): Promise<DiagramDetail> {
+    return this.local.getDiagram(id)
   }
-  updateBoard(id: Uuid, patch: BoardPatch): Promise<Board> {
-    return this.local.updateBoard(id, patch)
+  updateDiagram(id: Uuid, patch: DiagramPatch): Promise<Diagram> {
+    return this.local.updateDiagram(id, patch)
   }
-  deleteBoard(id: Uuid): Promise<void> {
-    return this.local.deleteBoard(id)
+  deleteDiagram(id: Uuid): Promise<void> {
+    return this.local.deleteDiagram(id)
   }
-  createNode(boardId: Uuid, input: NodeInput): Promise<Node> {
-    return this.local.createNode(boardId, input)
+  createNode(diagramId: Uuid, input: NodeInput): Promise<Node> {
+    return this.local.createNode(diagramId, input)
   }
   updateNode(id: Uuid, patch: NodePatch): Promise<Node> {
     return this.local.updateNode(id, patch)
@@ -165,8 +162,8 @@ export class HttpGateway implements DataGateway {
   deleteNode(id: Uuid): Promise<void> {
     return this.local.deleteNode(id)
   }
-  createEdge(boardId: Uuid, input: EdgeInput): Promise<Edge> {
-    return this.local.createEdge(boardId, input)
+  createEdge(diagramId: Uuid, input: EdgeInput): Promise<Edge> {
+    return this.local.createEdge(diagramId, input)
   }
   updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge> {
     return this.local.updateEdge(id, patch)
@@ -174,48 +171,55 @@ export class HttpGateway implements DataGateway {
   deleteEdge(id: Uuid): Promise<void> {
     return this.local.deleteEdge(id)
   }
-  createView(boardId: Uuid, input: ViewInput): Promise<View> {
-    return this.local.createView(boardId, input)
+  createLayout(diagramId: Uuid, input: LayoutInput): Promise<Layout> {
+    return this.local.createLayout(diagramId, input)
   }
-  updateView(id: Uuid, patch: ViewPatch): Promise<View> {
-    return this.local.updateView(id, patch)
+  updateLayout(id: Uuid, patch: LayoutPatch): Promise<Layout> {
+    return this.local.updateLayout(id, patch)
   }
-  deleteView(id: Uuid): Promise<void> {
-    return this.local.deleteView(id)
+  deleteLayout(id: Uuid): Promise<void> {
+    return this.local.deleteLayout(id)
   }
-  bulkUpsertPositions(viewId: Uuid, positions: NodePositionInput[]): Promise<NodePositionInput[]> {
-    return this.local.bulkUpsertPositions(viewId, positions)
+  bulkUpsertPositions(
+    layoutId: Uuid,
+    positions: NodePositionInput[],
+  ): Promise<NodePositionInput[]> {
+    return this.local.bulkUpsertPositions(layoutId, positions)
   }
-  placeEntity(boardId: Uuid, viewId: Uuid, input: PlaceEntityInput): Promise<PlaceEntityResult> {
-    return this.local.placeEntity(boardId, viewId, input)
+  placeEntity(
+    diagramId: Uuid,
+    layoutId: Uuid,
+    input: PlaceEntityInput,
+  ): Promise<PlaceEntityResult> {
+    return this.local.placeEntity(diagramId, layoutId, input)
   }
 
-  addNode(boardId: Uuid, viewId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
-    return this.local.addNode(boardId, viewId, input)
+  addNode(diagramId: Uuid, layoutId: Uuid, input: AddNodeInput): Promise<AddNodeResult> {
+    return this.local.addNode(diagramId, layoutId, input)
   }
-  connectNodes(boardId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult> {
-    return this.local.connectNodes(boardId, input)
+  connectNodes(diagramId: Uuid, input: ConnectNodesInput): Promise<ConnectNodesResult> {
+    return this.local.connectNodes(diagramId, input)
   }
   connectToExistingEntity(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: ConnectToExistingEntityInput,
   ): Promise<ConnectToEntityResult> {
-    return this.local.connectToExistingEntity(boardId, viewId, input)
+    return this.local.connectToExistingEntity(diagramId, layoutId, input)
   }
   connectToNewEntity(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: ConnectToNewEntityInput,
   ): Promise<ConnectToEntityResult> {
-    return this.local.connectToNewEntity(boardId, viewId, input)
+    return this.local.connectToNewEntity(diagramId, layoutId, input)
   }
   pasteClipboard(
-    boardId: Uuid,
-    viewId: Uuid,
+    diagramId: Uuid,
+    layoutId: Uuid,
     input: PasteClipboardInput,
   ): Promise<PasteClipboardResult> {
-    return this.local.pasteClipboard(boardId, viewId, input)
+    return this.local.pasteClipboard(diagramId, layoutId, input)
   }
 
   getEntityUsages(entityId: Uuid): Promise<EntityUsage> {
@@ -257,18 +261,6 @@ export class HttpGateway implements DataGateway {
   }
   duplicatePalette(id: Uuid, name?: string): Promise<Palette> {
     return this.local.duplicatePalette(id, name)
-  }
-  listStyleProfiles(graphId: Uuid): Promise<StyleProfile[]> {
-    return this.local.listStyleProfiles(graphId)
-  }
-  createStyleProfile(graphId: Uuid, input: StyleProfileInput): Promise<StyleProfile> {
-    return this.local.createStyleProfile(graphId, input)
-  }
-  updateStyleProfile(id: Uuid, patch: StyleProfilePatch): Promise<StyleProfile> {
-    return this.local.updateStyleProfile(id, patch)
-  }
-  deleteStyleProfile(id: Uuid): Promise<void> {
-    return this.local.deleteStyleProfile(id)
   }
 
   undo(): Promise<boolean> {

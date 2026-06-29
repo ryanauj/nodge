@@ -10,11 +10,11 @@ import type { ResolvedEdgeStyle } from '../style'
 /** Seed a graph with two connected nodes and return the edge placement id. */
 async function seed(gw: LocalGateway) {
   const graph = await gw.createGraph({ name: 'G' })
-  const board = await gw.createBoard(graph.id, { name: 'B' })
-  const view = await gw.createView(board.id, { name: 'V' })
-  const a = await gw.addNode(board.id, view.id, { name: 'A', x: 0, y: 0 })
-  const b = await gw.addNode(board.id, view.id, { name: 'B', x: 100, y: 0 })
-  const { edge } = await gw.connectNodes(board.id, {
+  const diagram = await gw.createDiagram(graph.id, { name: 'B' })
+  const layout = await gw.createLayout(diagram.id, { name: 'V' })
+  const a = await gw.addNode(diagram.id, layout.id, { name: 'A', x: 0, y: 0 })
+  const b = await gw.addNode(diagram.id, layout.id, { name: 'B', x: 100, y: 0 })
+  const { edge } = await gw.connectNodes(diagram.id, {
     sourceNodeId: a.node.id,
     targetNodeId: b.node.id,
   })
@@ -24,7 +24,7 @@ async function seed(gw: LocalGateway) {
 const RESOLVED: ResolvedEdgeStyle = { ...DEFAULT_EDGE_TOKENS, stroke: '#123456' }
 
 describe('EdgeStylePanel — link/unlink (token vs pinned) (§8.3, §12 Phase 4)', () => {
-  it('pinning a control writes the resolved value into the edge styleOverride', async () => {
+  it('pinning a control writes the resolved value into the edge style', async () => {
     const gw = await createMemoryGateway()
     const { edgeId } = await seed(gw)
     const renders: number[] = []
@@ -41,9 +41,9 @@ describe('EdgeStylePanel — link/unlink (token vs pinned) (§8.3, §12 Phase 4)
     fireEvent.click(screen.getByLabelText('Pin stroke'))
     await waitFor(async () => {
       const graphId = (await gw.listGraphs())[0].id
-      const detail = await gw.getBoard((await gw.getGraph(graphId)).boards[0].id)
+      const detail = await gw.getDiagram((await gw.getGraph(graphId)).diagrams[0].id)
       const e = detail.edges.find((x) => x.id === edgeId)!
-      expect(e.styleOverride).toMatchObject({ stroke: '#123456' })
+      expect(e.style).toMatchObject({ stroke: '#123456' })
     })
 
     // The control is now enabled (pinned) and the toggle reads "Unlink".
@@ -54,7 +54,7 @@ describe('EdgeStylePanel — link/unlink (token vs pinned) (§8.3, §12 Phase 4)
   it('unlinking removes the key so the control follows the palette again', async () => {
     const gw = await createMemoryGateway()
     const { edgeId } = await seed(gw)
-    await gw.updateEdge(edgeId, { styleOverride: { stroke: '#abcdef' } })
+    await gw.updateEdge(edgeId, { style: { stroke: '#abcdef' } })
 
     renderWithGateway(
       <EdgeStylePanel edgeId={edgeId} resolved={RESOLVED} onChanged={() => {}} />,
@@ -67,9 +67,9 @@ describe('EdgeStylePanel — link/unlink (token vs pinned) (§8.3, §12 Phase 4)
 
     await waitFor(async () => {
       const graphId = (await gw.listGraphs())[0].id
-      const detail = await gw.getBoard((await gw.getGraph(graphId)).boards[0].id)
+      const detail = await gw.getDiagram((await gw.getGraph(graphId)).diagrams[0].id)
       const e = detail.edges.find((x) => x.id === edgeId)!
-      expect(Object.prototype.hasOwnProperty.call(e.styleOverride, 'stroke')).toBe(false)
+      expect(Object.prototype.hasOwnProperty.call(e.style, 'stroke')).toBe(false)
     })
   })
 })

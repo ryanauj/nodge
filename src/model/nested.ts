@@ -86,8 +86,9 @@ export function parsePaletteTokens(value: unknown, path: string): PaletteTokens 
 }
 
 /**
- * Optional filter/focus lens config on a view (spec §7.2). A view's filter
- * narrows the rendered subgraph *without* changing board membership. All fields
+ * Optional filter/focus lens config (spec §7.2). A filter narrows the rendered
+ * subgraph *without* changing diagram membership. Retained as a predicate for
+ * later querying (§D12); no longer wired to a layout. All fields
  * are optional and compose (an empty filter shows everything):
  *
  *   - `prototypeIds`  — show only nodes whose entity links one of these prototypes.
@@ -142,11 +143,12 @@ export function parseViewport(value: unknown, path: string): Viewport {
   }
 }
 
-export const PROTOTYPE_KINDS = ['node', 'relationship'] as const
+export const PROTOTYPE_KINDS = ['node', 'edge'] as const
 export type PrototypeKind = (typeof PROTOTYPE_KINDS)[number]
 
-export const STYLE_PROFILE_TARGETS = ['node', 'edge'] as const
-export type StyleProfileTarget = (typeof STYLE_PROFILE_TARGETS)[number]
+/** Positioning algorithms a layout can use (§D8). `manual` = hand-placed. */
+export const LAYOUT_ALGORITHMS = ['manual', 'dagre'] as const
+export type LayoutAlgorithm = (typeof LAYOUT_ALGORITHMS)[number]
 
 /** Oplog operation kinds (spec §6.3 / §6.6). */
 export const OPLOG_OPS = ['upsert', 'delete'] as const

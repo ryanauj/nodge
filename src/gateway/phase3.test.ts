@@ -1,12 +1,12 @@
 /**
- * Phase 3 — Multi-view / subgraphs (spec §12) gateway integration tests.
+ * Phase 3 — Multi-layout / subgraphs (spec §12) gateway integration tests.
  *
  * Real in-memory SQLite through the gateway + command bus. Proves the Phase 3
- * acceptance criteria: the same entity on two boards (via placeEntity), a
- * filtered view rendering a hops-from-focus subgraph, per-view palette swap
- * re-skinning (with a pinned value surviving), per-view viewport/positions
- * persisting, and all connections still resolving to base entities. Compound
- * gestures (placeEntity, deleteBoard, deleteView) revert as one undo each.
+ * acceptance criteria: the same entity on two diagrams (via placeEntity), a
+ * per-layout palette swap re-skinning (with a pinned value surviving), per-layout
+ * viewport/positions persisting, and all connections still resolving to base
+ * entities. Compound gestures (placeEntity, deleteDiagram, deleteLayout) revert
+ * as one undo each.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -26,29 +26,29 @@ function deterministicDeps(): GatewayDeps {
 
 async function newGraph(gw: LocalGateway) {
   const graph = await gw.createGraph({ name: 'G' })
-  const board = await gw.createBoard(graph.id, { name: 'Board 1' })
-  const view = await gw.createView(board.id, { name: 'View 1' })
-  return { graphId: graph.id, boardId: board.id, viewId: view.id }
+  const diagram = await gw.createDiagram(graph.id, { name: 'Diagram 1' })
+  const layout = await gw.createLayout(diagram.id, { name: 'Layout 1' })
+  return { graphId: graph.id, diagramId: diagram.id, layoutId: layout.id }
 }
 
-describe('Phase 3 — the same entity appears on two boards (§7.1)', () => {
-  it('placeEntity places one entity on board A and board B; usages list both', async () => {
+describe('Phase 3 — the same entity appears on two diagrams (§7.1)', () => {
+  it('placeEntity places one entity on diagram A and diagram B; usages list both', async () => {
     const gw = await createMemoryGateway(deterministicDeps())
-    const { graphId, boardId: boardA, viewId: viewA } = await newGraph(gw)
-    const boardB = await gw.createBoard(graphId, { name: 'Board B' })
-    const viewB = await gw.createView(boardB.id, { name: 'View B' })
+    const { graphId, diagramId: diagramA, layoutId: layoutA } = await newGraph(gw)
+    const diagramB = await gw.createDiagram(graphId, { name: 'Diagram B' })
+    const layoutB = await gw.createLayout(diagramB.id, { name: 'Layout B' })
 
     // Create the entity by adding a node on A; then PLACE the same entity on B.
-    const added = await gw.addNode(boardA, viewA, { name: 'Shared', x: 0, y: 0 })
-    const placed = await gw.placeEntity(boardB.id, viewB.id, {
+    const added = await gw.addNode(diagramA, layoutA, { name: 'Shared', x: 0, y: 0 })
+    const placed = await gw.placeEntity(diagramB.id, layoutB.id, {
       entityId: added.entity.id,
       x: 50,
       y: 60,
     })
     expect(placed.node.entityId).toBe(added.entity.id) // same entity, new placement
 
-    const detailA = await gw.getBoard(boardA)
-    const detailB = await gw.getBoard(boardB.id)
+    const detailA = await gw.getDiagram(diagramA)
+    const detailB = await gw.getDiagram(diagramB.id)
     expect(detailA.nodes.some((n) => n.entityId === added.entity.id)).toBe(true)
     expect(detailB.nodes.some((n) => n.entityId === added.entity.id)).toBe(true)
 
@@ -56,81 +56,43 @@ describe('Phase 3 — the same entity appears on two boards (§7.1)', () => {
     expect(usage.placements.map((p) => p.nodeId).sort()).toEqual(
       [added.node.id, placed.node.id].sort(),
     )
-    expect(usage.placements.map((p) => p.boardName).sort()).toEqual(['Board 1', 'Board B'])
+    expect(usage.placements.map((p) => p.diagramName).sort()).toEqual(['Diagram 1', 'Diagram B'])
 
-    // Editing the entity reflects on both boards (one canonical thing).
+    // Editing the entity reflects on both diagrams (one canonical thing).
     await gw.updateEntity(added.entity.id, { name: 'Renamed' })
     const entity = (await gw.getGraph(graphId)).entities.find((e) => e.id === added.entity.id)
     expect(entity?.name).toBe('Renamed')
 
-    // The placement on B carried its own per-view position.
-    const posB = detailB.views[0].positions.find((p) => p.nodeId === placed.node.id)
+    // The placement on B carried its own per-layout position.
+    const posB = detailB.layouts[0].positions.find((p) => p.nodeId === placed.node.id)
     expect(posB).toMatchObject({ x: 50, y: 60 })
   })
 
   it('placeEntity is one undoable command (node + position revert together)', async () => {
     const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
-    const added = await gw.addNode(boardId, viewId, { name: 'E', x: 0, y: 0 })
-    const board2 = await gw.createBoard(graphId, { name: 'B2' })
-    const view2 = await gw.createView(board2.id, { name: 'V2' })
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const added = await gw.addNode(diagramId, layoutId, { name: 'E', x: 0, y: 0 })
+    const diagram2 = await gw.createDiagram(graphId, { name: 'D2' })
+    const layout2 = await gw.createLayout(diagram2.id, { name: 'L2' })
 
-    await gw.placeEntity(board2.id, view2.id, { entityId: added.entity.id, x: 1, y: 1 })
-    let detail = await gw.getBoard(board2.id)
+    await gw.placeEntity(diagram2.id, layout2.id, { entityId: added.entity.id, x: 1, y: 1 })
+    let detail = await gw.getDiagram(diagram2.id)
     expect(detail.nodes).toHaveLength(1)
-    expect(detail.views[0].positions).toHaveLength(1)
+    expect(detail.layouts[0].positions).toHaveLength(1)
 
     expect(await gw.undo()).toBe(true)
-    detail = await gw.getBoard(board2.id)
+    detail = await gw.getDiagram(diagram2.id)
     expect(detail.nodes).toHaveLength(0)
-    expect(detail.views[0].positions).toHaveLength(0)
+    expect(detail.layouts[0].positions).toHaveLength(0)
     // The base entity survives the undo (we only removed the placement).
     expect((await gw.getGraph(graphId)).entities.some((e) => e.id === added.entity.id)).toBe(true)
   })
 })
 
-describe('Phase 3 — filtered view renders a hops-from-focus subgraph (§7.2)', () => {
-  it('focus=X hops=1 renders only X and its 1-hop neighbors via the diagram transform', async () => {
-    const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
-    // Chain X — A — B
-    const x = await gw.addNode(boardId, viewId, { name: 'X', x: 0, y: 0 })
-    const a = await gw.addNode(boardId, viewId, { name: 'A', x: 100, y: 0 })
-    const b = await gw.addNode(boardId, viewId, { name: 'B', x: 200, y: 0 })
-    await gw.connectNodes(boardId, { sourceNodeId: x.node.id, targetNodeId: a.node.id })
-    await gw.connectNodes(boardId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
-
-    // Unfiltered: all three render.
-    const all = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: null })
-    expect(all.flowNodes).toHaveLength(3)
-
-    // Set the view's focus+hops lens, then re-load: only X and A survive.
-    await gw.updateView(viewId, { filter: { focusNodeId: x.node.id, hops: 1 } })
-    const focused = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: null })
-    expect(focused.flowNodes.map((n) => n.id).sort()).toEqual([x.node.id, a.node.id].sort())
-    // The surviving edge still traces to a base relationship between base entities.
-    expect(focused.flowEdges).toHaveLength(1)
-    expect(focused.flowEdges[0].source).toBe(x.node.id)
-    expect(focused.flowEdges[0].target).toBe(a.node.id)
-  })
-
-  it('prototype filter renders only nodes of that prototype', async () => {
-    const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
-    const proto = await gw.createPrototype(graphId, { kind: 'node', name: 'Box' })
-    const boxed = await gw.addNode(boardId, viewId, { name: 'P', x: 0, y: 0, prototypeId: proto.id })
-    await gw.addNode(boardId, viewId, { name: 'Q', x: 100, y: 0 })
-
-    await gw.updateView(viewId, { filter: { prototypeIds: [proto.id] } })
-    const snap = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: null })
-    expect(snap.flowNodes.map((n) => n.id)).toEqual([boxed.node.id])
-  })
-})
-
-describe('Phase 3 — per-view palette selection re-skins the view (§8.3, §8.4)', () => {
+describe('Phase 3 — per-palette selection re-skins the diagram (§8.3, §8.4)', () => {
   it('switching paletteId re-skins a following node; a pinned value is unchanged', async () => {
     const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
     const paletteA = await gw.createPalette(graphId, {
       name: 'A',
       tokens: BUILTIN_PALETTES[0].tokens, // Default — surface #ffffff
@@ -141,26 +103,24 @@ describe('Phase 3 — per-view palette selection re-skins the view (§8.3, §8.4
       tokens: BUILTIN_PALETTES[1].tokens, // Midnight — surface #1f2937
       builtin: true,
     })
-    await gw.updateView(viewId, { paletteId: paletteA.id })
 
     // A following node (no pins) + a node pinning its surface.
-    const following = await gw.addNode(boardId, viewId, { name: 'follow', x: 0, y: 0 })
-    const pinned = await gw.addNode(boardId, viewId, {
+    const following = await gw.addNode(diagramId, layoutId, { name: 'follow', x: 0, y: 0 })
+    const pinned = await gw.addNode(diagramId, layoutId, {
       name: 'pinned',
       x: 100,
       y: 0,
-      styleOverride: { surface: '#abcdef' },
+      style: { surface: '#abcdef' },
     })
 
-    const underA = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: paletteA.id })
+    const underA = await loadDiagram(gw, { graphId, diagramId, layoutId, paletteId: paletteA.id })
     const fA = underA.flowNodes.find((n) => n.id === following.node.id)!
     const pA = underA.flowNodes.find((n) => n.id === pinned.node.id)!
     expect(fA.data.style.surface).toBe('#ffffff') // Default palette A
     expect(pA.data.style.surface).toBe('#abcdef') // pinned
 
-    // Swap the view's palette (palette-switch is just updateView).
-    await gw.updateView(viewId, { paletteId: paletteB.id })
-    const underB = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: paletteB.id })
+    // Swap the palette the diagram is loaded under.
+    const underB = await loadDiagram(gw, { graphId, diagramId, layoutId, paletteId: paletteB.id })
     const fB = underB.flowNodes.find((n) => n.id === following.node.id)!
     const pB = underB.flowNodes.find((n) => n.id === pinned.node.id)!
     expect(fB.data.style.surface).toBe('#1f2937') // re-skinned to Midnight
@@ -168,47 +128,47 @@ describe('Phase 3 — per-view palette selection re-skins the view (§8.3, §8.4
   })
 })
 
-describe('Phase 3 — per-view viewport + positions persist (§7.2)', () => {
-  it('updateView persists viewport; positions are per view', async () => {
+describe('Phase 3 — per-layout viewport + positions persist (§7.2)', () => {
+  it('updateLayout persists viewport; positions are per layout', async () => {
     const gw = await createMemoryGateway()
-    const { boardId, viewId } = await newGraph(gw)
-    const view2 = await gw.createView(boardId, { name: 'View 2' })
-    const n = await gw.addNode(boardId, viewId, { name: 'N', x: 10, y: 20 })
-    // The same node sits differently in view 2 (per-view positions).
-    await gw.bulkUpsertPositions(view2.id, [{ nodeId: n.node.id, x: 999, y: 888 }])
+    const { diagramId, layoutId } = await newGraph(gw)
+    const layout2 = await gw.createLayout(diagramId, { name: 'Layout 2' })
+    const n = await gw.addNode(diagramId, layoutId, { name: 'N', x: 10, y: 20 })
+    // The same node sits differently in layout 2 (per-layout positions).
+    await gw.bulkUpsertPositions(layout2.id, [{ nodeId: n.node.id, x: 999, y: 888 }])
 
-    await gw.updateView(viewId, { viewport: { x: 5, y: 6, zoom: 1.5 } })
+    await gw.updateLayout(layoutId, { viewport: { x: 5, y: 6, zoom: 1.5 } })
 
-    const detail = await gw.getBoard(boardId)
-    const v1 = detail.views.find((v) => v.id === viewId)!
-    const v2 = detail.views.find((v) => v.id === view2.id)!
-    expect(v1.viewport).toEqual({ x: 5, y: 6, zoom: 1.5 })
-    expect(v1.positions.find((p) => p.nodeId === n.node.id)).toMatchObject({ x: 10, y: 20 })
-    expect(v2.positions.find((p) => p.nodeId === n.node.id)).toMatchObject({ x: 999, y: 888 })
+    const detail = await gw.getDiagram(diagramId)
+    const l1 = detail.layouts.find((l) => l.id === layoutId)!
+    const l2 = detail.layouts.find((l) => l.id === layout2.id)!
+    expect(l1.viewport).toEqual({ x: 5, y: 6, zoom: 1.5 })
+    expect(l1.positions.find((p) => p.nodeId === n.node.id)).toMatchObject({ x: 10, y: 20 })
+    expect(l2.positions.find((p) => p.nodeId === n.node.id)).toMatchObject({ x: 999, y: 888 })
   })
 })
 
 describe('Phase 3 — all connections still resolve to base entities (§7.4)', () => {
-  it('after multi-board placement + filtering, every rendered edge traces to a base relationship', async () => {
+  it('after multi-diagram placement, every rendered edge traces to a base relationship', async () => {
     const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
-    const a = await gw.addNode(boardId, viewId, { name: 'A', x: 0, y: 0 })
-    const b = await gw.addNode(boardId, viewId, { name: 'B', x: 100, y: 0 })
-    const conn = await gw.connectNodes(boardId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
-    // Place A on a second board too.
-    const board2 = await gw.createBoard(graphId, { name: 'B2' })
-    const view2 = await gw.createView(board2.id, { name: 'V2' })
-    await gw.placeEntity(board2.id, view2.id, { entityId: a.entity.id, x: 0, y: 0 })
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const a = await gw.addNode(diagramId, layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(diagramId, layoutId, { name: 'B', x: 100, y: 0 })
+    const conn = await gw.connectNodes(diagramId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
+    // Place A on a second diagram too.
+    const diagram2 = await gw.createDiagram(graphId, { name: 'D2' })
+    const layout2 = await gw.createLayout(diagram2.id, { name: 'L2' })
+    await gw.placeEntity(diagram2.id, layout2.id, { entityId: a.entity.id, x: 0, y: 0 })
 
-    const snap = await loadDiagram(gw, { graphId, boardId, viewId, paletteId: null })
+    const snap = await loadDiagram(gw, { graphId, diagramId, layoutId, paletteId: null })
     const graph = await gw.getGraph(graphId)
     const rels = new Map(graph.relationships.map((r) => [r.id, r]))
-    const detail = await gw.getBoard(boardId)
+    const detail = await gw.getDiagram(diagramId)
     const nodeEntity = new Map(detail.nodes.map((n) => [n.id, n.entityId]))
     for (const fe of snap.flowEdges) {
-      // The rendered edge id maps to a board edge → a base relationship → base entities.
-      const boardEdge = detail.edges.find((e) => e.id === fe.id)!
-      const rel = rels.get(boardEdge.relationshipId)!
+      // The rendered edge id maps to a diagram edge → a base relationship → base entities.
+      const diagramEdge = detail.edges.find((e) => e.id === fe.id)!
+      const rel = rels.get(diagramEdge.relationshipId)!
       expect(rel.sourceEntityId).toBe(nodeEntity.get(fe.source))
       expect(rel.targetEntityId).toBe(nodeEntity.get(fe.target))
     }
@@ -216,40 +176,40 @@ describe('Phase 3 — all connections still resolve to base entities (§7.4)', (
   })
 })
 
-describe('Phase 3 — delete board / view are single undoable commands (§7.1)', () => {
-  it('deleteBoard removes nodes/edges/views/positions but not base entities, one undo', async () => {
+describe('Phase 3 — delete diagram / layout are single undoable commands (§7.1)', () => {
+  it('deleteDiagram removes nodes/edges/layouts/positions but not base entities, one undo', async () => {
     const gw = await createMemoryGateway()
-    const { graphId, boardId, viewId } = await newGraph(gw)
-    const a = await gw.addNode(boardId, viewId, { name: 'A', x: 0, y: 0 })
-    const b = await gw.addNode(boardId, viewId, { name: 'B', x: 1, y: 1 })
-    await gw.connectNodes(boardId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const a = await gw.addNode(diagramId, layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(diagramId, layoutId, { name: 'B', x: 1, y: 1 })
+    await gw.connectNodes(diagramId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
 
-    await gw.deleteBoard(boardId)
-    expect((await gw.getGraph(graphId)).boards.some((bd) => bd.id === boardId)).toBe(false)
-    // Base entities survive a board deletion.
+    await gw.deleteDiagram(diagramId)
+    expect((await gw.getGraph(graphId)).diagrams.some((d) => d.id === diagramId)).toBe(false)
+    // Base entities survive a diagram deletion.
     expect((await gw.getGraph(graphId)).entities).toHaveLength(2)
 
     expect(await gw.undo()).toBe(true)
-    const restored = await gw.getBoard(boardId)
+    const restored = await gw.getDiagram(diagramId)
     expect(restored.nodes).toHaveLength(2)
     expect(restored.edges).toHaveLength(1)
-    expect(restored.views[0].positions).toHaveLength(2)
+    expect(restored.layouts[0].positions).toHaveLength(2)
   })
 
-  it('deleteView removes the view + its positions, one undo', async () => {
+  it('deleteLayout removes the layout + its positions, one undo', async () => {
     const gw = await createMemoryGateway()
-    const { boardId, viewId } = await newGraph(gw)
-    const view2 = await gw.createView(boardId, { name: 'View 2' })
-    const n = await gw.addNode(boardId, viewId, { name: 'N', x: 0, y: 0 })
-    await gw.bulkUpsertPositions(view2.id, [{ nodeId: n.node.id, x: 5, y: 5 }])
+    const { diagramId, layoutId } = await newGraph(gw)
+    const layout2 = await gw.createLayout(diagramId, { name: 'Layout 2' })
+    const n = await gw.addNode(diagramId, layoutId, { name: 'N', x: 0, y: 0 })
+    await gw.bulkUpsertPositions(layout2.id, [{ nodeId: n.node.id, x: 5, y: 5 }])
 
-    await gw.deleteView(view2.id)
-    let detail = await gw.getBoard(boardId)
-    expect(detail.views.some((v) => v.id === view2.id)).toBe(false)
+    await gw.deleteLayout(layout2.id)
+    let detail = await gw.getDiagram(diagramId)
+    expect(detail.layouts.some((l) => l.id === layout2.id)).toBe(false)
 
     expect(await gw.undo()).toBe(true)
-    detail = await gw.getBoard(boardId)
-    const restored = detail.views.find((v) => v.id === view2.id)
+    detail = await gw.getDiagram(diagramId)
+    const restored = detail.layouts.find((l) => l.id === layout2.id)
     expect(restored?.positions).toHaveLength(1)
   })
 })

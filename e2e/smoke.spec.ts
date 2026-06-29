@@ -113,60 +113,53 @@ test('Phase 2: prototype library stamps a node and selection opens properties', 
   expect(errors).toEqual([])
 })
 
-test('Phase 3: create a second board, switch boards, swap the palette', async ({ page }) => {
+test('Phase 3: create a second diagram, switch diagrams', async ({ page }) => {
   const errors = trackErrors(page)
   await page.goto('/')
 
-  // The URL reflects the active board/view (React Router, §11).
-  await expect(page).toHaveURL(/\/board\/.+\/view\/.+/)
+  // The URL reflects the active diagram/layout (React Router, §11).
+  await expect(page).toHaveURL(/\/diagram\/.+\/layout\/.+/)
   const firstUrl = page.url()
 
-  // The boards/views switcher (in the Palette sheet) shows the seeded board+view.
+  // The diagrams/layouts switcher (in the Palette sheet) shows the seeded diagram.
   const addNode = page.getByRole('button', { name: 'Add node' }).first()
   await expect(addNode).toBeEnabled()
   let paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
-  let boardsPanel = paletteSheet.getByRole('region', { name: 'Boards and views' })
-  await expect(boardsPanel).toBeVisible()
-  await expect(boardsPanel.getByLabel('Open board Board 1')).toBeVisible()
+  let diagramsPanel = paletteSheet.getByRole('region', { name: 'Diagrams and layouts' })
+  await expect(diagramsPanel).toBeVisible()
+  await expect(diagramsPanel.getByLabel('Open diagram Diagram 1')).toBeVisible()
 
-  // Create a second board → navigation moves to its (new) board/view URL and
-  // Board 2 becomes the active board.
-  await boardsPanel.getByLabel('New board name').fill('Board 2')
-  await boardsPanel.getByLabel('Create board').click()
+  // Create a second diagram → navigation moves to its (new) URL and Diagram 2
+  // becomes the active diagram.
+  await diagramsPanel.getByLabel('New diagram name').fill('Diagram 2')
+  await diagramsPanel.getByLabel('Create diagram').click()
   await expect.poll(() => page.url()).not.toBe(firstUrl)
-  await expect(page).toHaveURL(/\/board\/.+\/view\/.+/)
-  await expect(boardsPanel.getByLabel('Open board Board 2')).toHaveAttribute('aria-current', 'true')
+  await expect(page).toHaveURL(/\/diagram\/.+\/layout\/.+/)
+  await expect(diagramsPanel.getByLabel('Open diagram Diagram 2')).toHaveAttribute(
+    'aria-current',
+    'true',
+  )
 
-  // Add a node on the new board (close the sheet so the dock is reachable), then
-  // switch back to Board 1 (a separate subgraph).
+  // Add a node on the new diagram (close the sheet so the dock is reachable),
+  // then switch back to Diagram 1 (a separate subgraph).
   await closeSheet(page, 'Palette')
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
 
   paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
-  boardsPanel = paletteSheet.getByRole('region', { name: 'Boards and views' })
-  await boardsPanel.getByLabel('Open board Board 1').click()
-  await expect(boardsPanel.getByLabel('Open board Board 1')).toHaveAttribute('aria-current', 'true')
+  diagramsPanel = paletteSheet.getByRole('region', { name: 'Diagrams and layouts' })
+  await diagramsPanel.getByLabel('Open diagram Diagram 1').click()
+  await expect(diagramsPanel.getByLabel('Open diagram Diagram 1')).toHaveAttribute(
+    'aria-current',
+    'true',
+  )
   await closeSheet(page, 'Palette')
-  // Board 1 has its own (empty) membership.
+  // Diagram 1 has its own (empty) membership.
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
 
-  // Add a node on Board 1, then re-skin via the per-view palette switcher (§8.4).
+  // Add a node on Diagram 1 — it renders with the seeded default style.
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
-  paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
-  const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
-  await expect(palettePanel).toBeVisible()
-  await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
-  // The node re-skins to the Midnight surface (#1f2937 → rgb(31, 41, 55)).
-  await expect
-    .poll(() =>
-      page
-        .locator('.nodge-node')
-        .first()
-        .evaluate((el) => getComputedStyle(el).backgroundColor),
-    )
-    .toBe('rgb(31, 41, 55)')
 
   expect(errors).toEqual([])
 })

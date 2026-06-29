@@ -13,9 +13,9 @@ describe('loadDiagram', () => {
     const gw = await createMemoryGateway()
     const ids = await bootstrapOrOpen(gw, memoryStorage())
 
-    const a = await gw.addNode(ids.boardId, ids.viewId, { name: 'A', x: 10, y: 20 })
-    const b = await gw.addNode(ids.boardId, ids.viewId, { name: 'B', x: 200, y: 20 })
-    await gw.connectNodes(ids.boardId, {
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 10, y: 20 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 200, y: 20 })
+    await gw.connectNodes(ids.diagramId, {
       sourceNodeId: a.node.id,
       targetNodeId: b.node.id,
       label: 'calls',
@@ -41,11 +41,11 @@ describe('loadDiagram', () => {
   it('reflects a per-node pinned override over the palette', async () => {
     const gw = await createMemoryGateway()
     const ids = await bootstrapOrOpen(gw, memoryStorage())
-    const a = await gw.addNode(ids.boardId, ids.viewId, {
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, {
       name: 'Pinned',
       x: 0,
       y: 0,
-      styleOverride: { surface: '#ff0000' },
+      style: { surface: '#ff0000' },
     })
 
     const snap = await loadDiagram(gw, ids)

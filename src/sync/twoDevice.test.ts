@@ -37,12 +37,12 @@ describe('Phase 6 — two-device reconcile (headline acceptance)', () => {
 
     // ── Device A creates a graph with three entities, then pushes ──
     const graph = await deviceA.createGraph({ name: 'Shared', description: '' })
-    const board = await deviceA.createBoard(graph.id, { name: 'Board' })
-    const view = await deviceA.createView(board.id, { name: 'View' })
-    const alpha = await deviceA.addNode(board.id, view.id, { name: 'Alpha', x: 0, y: 0 })
-    const beta = await deviceA.addNode(board.id, view.id, { name: 'Beta', x: 50, y: 0 })
-    const gamma = await deviceA.addNode(board.id, view.id, { name: 'Gamma', x: 100, y: 0 })
-    await deviceA.connectNodes(board.id, {
+    const diagram = await deviceA.createDiagram(graph.id, { name: 'Board' })
+    const layout = await deviceA.createLayout(diagram.id, { name: 'View' })
+    const alpha = await deviceA.addNode(diagram.id, layout.id, { name: 'Alpha', x: 0, y: 0 })
+    const beta = await deviceA.addNode(diagram.id, layout.id, { name: 'Beta', x: 50, y: 0 })
+    const gamma = await deviceA.addNode(diagram.id, layout.id, { name: 'Gamma', x: 100, y: 0 })
+    await deviceA.connectNodes(diagram.id, {
       sourceNodeId: alpha.node.id,
       targetNodeId: beta.node.id,
       label: 'a→b',
@@ -56,7 +56,7 @@ describe('Phase 6 — two-device reconcile (headline acceptance)', () => {
     expect(bGraph.entities.map((e) => e.id).sort()).toEqual(
       [alpha.entity.id, beta.entity.id, gamma.entity.id].sort(),
     )
-    const bBoard = await deviceB.getBoard(board.id)
+    const bBoard = await deviceB.getDiagram(diagram.id)
     expect(bBoard.nodes).toHaveLength(3)
     expect(bBoard.edges).toHaveLength(1)
     // Every id is an A-minted UUID (no remap on the receiving device).

@@ -1,43 +1,29 @@
 /**
- * Per-view palette switcher (spec §8.4, §12 Phase 3).
- *
- * Lists the graph's palettes (the seeded built-in library + any user palettes)
- * and assigns the chosen one to the active view via `updateView({ paletteId })`.
- * Because `diagram.ts` resolves a view's tokens from its palette and node/edge
- * styles are token-referenced, switching re-skins everything not pinned. Phase 3
- * is palette *selection* only; the token-level editor is Phase 4.
+ * Palette switcher (spec §8.4; §D10 — palettes demoted to app-chrome theme +
+ * preset/seed source). Lists the graph's palettes (the seeded built-in library
+ * plus any user palettes) and reports the chosen one up via `onSelect`. Per-canvas
+ * palette assignment was removed (§D10): node/edge styles are concrete snapshots,
+ * so the palette is a chrome theme / fallback, not a live per-canvas reskin.
  */
 
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useGateway } from '../../app/GatewayContext'
 import type { Uuid } from '../../gateway'
 
 export interface PaletteSwitcherProps {
   graphId: Uuid
-  viewId: Uuid
-  /** The view's current palette id (controls the selected option). */
+  /** The currently selected palette id (controls the selected option). */
   currentPaletteId: Uuid | null
-  /** Called after the palette is switched so the canvas re-skins. */
-  onChanged: () => void
+  /** Called with the chosen palette id. */
+  onSelect: (paletteId: Uuid) => void
 }
 
-export function PaletteSwitcher({
-  graphId,
-  viewId,
-  currentPaletteId,
-  onChanged,
-}: PaletteSwitcherProps) {
+export function PaletteSwitcher({ graphId, currentPaletteId, onSelect }: PaletteSwitcherProps) {
   const getGateway = useGateway()
 
   const palettes = useQuery({
     queryKey: ['palettes', graphId],
     queryFn: async () => (await getGateway()).listPalettes(graphId),
-  })
-
-  const switchPalette = useMutation({
-    mutationFn: async (paletteId: Uuid) =>
-      (await getGateway()).updateView(viewId, { paletteId }),
-    onSuccess: onChanged,
   })
 
   return (
@@ -48,7 +34,7 @@ export function PaletteSwitcher({
         <select
           aria-label="Canvas palette"
           value={currentPaletteId ?? ''}
-          onChange={(e) => switchPalette.mutate(e.target.value)}
+          onChange={(e) => onSelect(e.target.value)}
         >
           {(palettes.data ?? []).map((p) => (
             <option key={p.id} value={p.id}>

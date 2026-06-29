@@ -5,48 +5,46 @@
  */
 
 import {
-  type Board,
+  type Diagram,
   type Edge,
   type Entity,
   type Graph,
+  type Layout,
   type Node,
   type Palette,
   type Prototype,
   type Relationship,
-  type StyleProfile,
-  type View,
-  boardTable,
+  diagramTable,
   edgeTable,
   entityTable,
   graphTable,
+  layoutTable,
   nodeTable,
   paletteTable,
   prototypeTable,
   relationshipTable,
-  styleProfileTable,
-  viewTable,
 } from './schema'
 import { parseRow } from './table'
 import { ValidationError, expectArray, expectNumber, expectRecord } from './validate'
 
 /** The current document format version. The JSON migration chain targets this. */
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
-/** A node position as carried inside a view (viewId is implied by nesting). */
+/** A node position as carried inside a layout (layoutId is implied by nesting). */
 export interface DocumentNodePosition {
   nodeId: string
   x: number
   y: number
 }
 
-export interface DocumentView extends View {
+export interface DocumentLayout extends Layout {
   positions: DocumentNodePosition[]
 }
 
-export interface DocumentBoard extends Board {
+export interface DocumentDiagram extends Diagram {
   nodes: Node[]
   edges: Edge[]
-  views: DocumentView[]
+  layouts: DocumentLayout[]
 }
 
 /** The whole graph serialized as JSON — the `.nodge.json` payload. */
@@ -56,9 +54,8 @@ export interface NodgeDocument {
   entities: Entity[]
   relationships: Relationship[]
   prototypes: Prototype[]
-  boards: DocumentBoard[]
+  diagrams: DocumentDiagram[]
   palettes: Palette[]
-  styleProfiles: StyleProfile[]
 }
 
 function parseArray<T>(
@@ -96,27 +93,32 @@ export function validateDocument(value: unknown): NodgeDocument {
   const prototypes = parseArray(root.prototypes, '$.prototypes', (v, p) =>
     parseRow(prototypeTable, v, p),
   )
-  const boards = parseArray(root.boards, '$.boards', (boardValue, boardPath) => {
-    const boardRecord = expectRecord(boardValue, boardPath)
-    const board = parseRow(boardTable, boardRecord, boardPath)
-    const nodes = parseArray(boardRecord.nodes, `${boardPath}.nodes`, (v, p) =>
+  const diagrams = parseArray(root.diagrams, '$.diagrams', (diagramValue, diagramPath) => {
+    const diagramRecord = expectRecord(diagramValue, diagramPath)
+    const diagram = parseRow(diagramTable, diagramRecord, diagramPath)
+    const nodes = parseArray(diagramRecord.nodes, `${diagramPath}.nodes`, (v, p) =>
       parseRow(nodeTable, v, p),
     )
-    const edges = parseArray(boardRecord.edges, `${boardPath}.edges`, (v, p) =>
+    const edges = parseArray(diagramRecord.edges, `${diagramPath}.edges`, (v, p) =>
       parseRow(edgeTable, v, p),
     )
-    const views = parseArray(boardRecord.views, `${boardPath}.views`, (viewValue, viewPath) => {
-      const viewRecord = expectRecord(viewValue, viewPath)
-      const view = parseRow(viewTable, viewRecord, viewPath)
-      const positions = parseArray(viewRecord.positions, `${viewPath}.positions`, parsePosition)
-      return { ...view, positions }
-    })
-    return { ...board, nodes, edges, views }
+    const layouts = parseArray(
+      diagramRecord.layouts,
+      `${diagramPath}.layouts`,
+      (layoutValue, layoutPath) => {
+        const layoutRecord = expectRecord(layoutValue, layoutPath)
+        const layout = parseRow(layoutTable, layoutRecord, layoutPath)
+        const positions = parseArray(
+          layoutRecord.positions,
+          `${layoutPath}.positions`,
+          parsePosition,
+        )
+        return { ...layout, positions }
+      },
+    )
+    return { ...diagram, nodes, edges, layouts }
   })
   const palettes = parseArray(root.palettes, '$.palettes', (v, p) => parseRow(paletteTable, v, p))
-  const styleProfiles = parseArray(root.styleProfiles, '$.styleProfiles', (v, p) =>
-    parseRow(styleProfileTable, v, p),
-  )
 
   return {
     schemaVersion,
@@ -124,9 +126,7 @@ export function validateDocument(value: unknown): NodgeDocument {
     entities,
     relationships,
     prototypes,
-    boards,
+    diagrams,
     palettes,
-    styleProfiles,
   }
 }
-

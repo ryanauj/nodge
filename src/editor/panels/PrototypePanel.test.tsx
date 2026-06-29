@@ -8,7 +8,7 @@ import type { LocalGateway } from '../../gateway/LocalGateway'
 async function seed(gw: LocalGateway) {
   const graph = await gw.createGraph({ name: 'G' })
   await gw.createPrototype(graph.id, { kind: 'node', name: 'Service' })
-  await gw.createPrototype(graph.id, { kind: 'relationship', name: 'Calls' })
+  await gw.createPrototype(graph.id, { kind: 'edge', name: 'Calls' })
   return graph.id
 }
 
@@ -75,9 +75,9 @@ describe('PrototypePanel (§9.1)', () => {
   it('saves a selected node as a prototype', async () => {
     const gw = await createMemoryGateway()
     const graph = await gw.createGraph({ name: 'G' })
-    const board = await gw.createBoard(graph.id, { name: 'B' })
-    const view = await gw.createView(board.id, { name: 'V' })
-    const added = await gw.addNode(board.id, view.id, { name: 'My Node', x: 0, y: 0 })
+    const diagram = await gw.createDiagram(graph.id, { name: 'B' })
+    const layout = await gw.createLayout(diagram.id, { name: 'V' })
+    const added = await gw.addNode(diagram.id, layout.id, { name: 'My Node', x: 0, y: 0 })
 
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Saved Proto')
     renderWithGateway(

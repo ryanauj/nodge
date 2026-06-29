@@ -37,17 +37,17 @@ export const BUILTIN_NODE_PROTOTYPES: PrototypeInput[] = [
   },
 ]
 
-/** Default relationship prototypes: common edge types. */
-export const BUILTIN_RELATIONSHIP_PROTOTYPES: PrototypeInput[] = [
+/** Default edge prototypes: common edge types. */
+export const BUILTIN_EDGE_PROTOTYPES: PrototypeInput[] = [
   {
-    kind: 'relationship',
+    kind: 'edge',
     name: 'Calls',
     defaultLabel: 'calls',
     style: { stroke: '#4361ee', strokeWidth: 1.5 },
     metadata: { category: 'call' },
   },
   {
-    kind: 'relationship',
+    kind: 'edge',
     name: 'Depends on',
     defaultLabel: 'depends on',
     style: { stroke: '#d6336c', strokeWidth: 1.5 },
@@ -57,5 +57,5 @@ export const BUILTIN_RELATIONSHIP_PROTOTYPES: PrototypeInput[] = [
 
 export const BUILTIN_PROTOTYPES: PrototypeInput[] = [
   ...BUILTIN_NODE_PROTOTYPES,
-  ...BUILTIN_RELATIONSHIP_PROTOTYPES,
+  ...BUILTIN_EDGE_PROTOTYPES,
 ]

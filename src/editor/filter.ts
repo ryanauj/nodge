@@ -46,7 +46,7 @@ function matchesPredicate(entity: Entity | undefined, filter: ViewFilter): boole
   if (!entity) return false
   const protoIds = filter.prototypeIds
   if (protoIds && protoIds.length > 0) {
-    if (!entity.prototypeId || !protoIds.includes(entity.prototypeId)) return false
+    if (!entity.nodePrototypeId || !protoIds.includes(entity.nodePrototypeId)) return false
   }
   const meta = filter.metadata
   if (meta) {

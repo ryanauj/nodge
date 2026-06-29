@@ -5,8 +5,8 @@ import { expect, test, type Page } from '@playwright/test'
  *   - the per-view canvas + the app-chrome are both wrapped in PaletteRoot
  *     boundaries that expose the palette's tokens as `--nodge-*` CSS variables;
  *   - applying a palette to the app chrome updates the chrome boundary's vars;
- *   - pinning a node's color survives a palette swap (the link/unlink affordance)
- *     while an unpinned node re-skins.
+ *   - pinning a node's color writes the node's concrete style snapshot (§D3);
+ *     swapping the palette no longer live-reskins existing nodes (§D10).
  */
 
 function trackErrors(page: Page): string[] {
@@ -69,13 +69,15 @@ test('palette boundaries expose CSS variables; chrome re-themes on apply', async
   expect(errors).toEqual([])
 })
 
-test('pin a node color; it survives a palette swap while others re-skin', async ({ page }) => {
+test('pin a node color writes its style; a palette swap no longer re-skins nodes', async ({
+  page,
+}) => {
   const errors = trackErrors(page)
   await page.goto('/')
   const addNode = page.getByRole('button', { name: 'Add node' }).first()
   await expect(addNode).toBeEnabled()
 
-  // Two nodes; pin the first's surface, leave the second following the palette.
+  // Two nodes; pin the first's surface, leave the second at its default snapshot.
   await addNode.click()
   await addNode.click()
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
@@ -87,27 +89,29 @@ test('pin a node color; it survives a palette swap while others re-skin', async 
   const stylePanel = propsSheet.getByRole('region', { name: 'Node style' })
   await expect(stylePanel).toBeVisible()
   await stylePanel.getByLabel('Pin surface').click()
-  // Set the pinned surface to a distinctive red.
+  // Set the pinned surface to a distinctive red — writes the node's concrete style.
   const surfaceInput = stylePanel.getByLabel('surface value')
   await expect(surfaceInput).toBeEnabled()
   await surfaceInput.fill('#ff0000')
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
   await closeSheet(page, 'Properties')
 
-  // Swap the view palette to Midnight (unpinned nodes → #1f2937) via the Palette sheet.
+  // Selecting a palette no longer live-reskins the canvas (§D10 — node styles are
+  // concrete snapshots). The pinned node stays red; the other keeps its default
+  // (seeded white) surface — neither becomes the Midnight surface.
   const paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
   const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
   await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
+  await closeSheet(page, 'Palette')
 
-  // The pinned node keeps red; at least one node shows the Midnight surface.
   await expect
     .poll(async () => {
       const colors = await page
         .locator('.nodge-node')
-        .evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor))
+        .evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor).sort())
       return colors
     })
-    .toEqual(expect.arrayContaining(['rgb(255, 0, 0)', 'rgb(31, 41, 55)']))
+    .toEqual(['rgb(255, 0, 0)', 'rgb(255, 255, 255)'])
 
   expect(errors).toEqual([])
 })
