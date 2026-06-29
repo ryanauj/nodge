@@ -204,7 +204,12 @@
 }
 
 .entity-picker-body input,
-.entity-picker-body select {
+.entity-picker-body select,
+/* The Create tab's Name input + prototype select also carry `.panel-field`;
+   name them explicitly (higher specificity) so the ≥44px target is locked in
+   regardless of source order / the shared `.panel-field` rules. */
+.entity-picker-body .panel-field input,
+.entity-picker-body .panel-field select {
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;

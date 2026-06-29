@@ -72,6 +72,42 @@ describe('EntityPicker (shared add-node / edge-drop picker, §9 / D6)', () => {
     expect(tabs).toHaveLength(2)
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
     expect(tabs[1]).toHaveAttribute('aria-selected', 'false')
+    // Roving tabindex: only the selected tab is in the Tab order.
+    expect(tabs[0]).toHaveAttribute('tabindex', '0')
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('derives the tablist label from the title (edge-drop reuse)', () => {
+    renderDesktop({ title: 'Connect to' })
+    expect(screen.getByRole('tablist', { name: 'Connect to by' })).toBeInTheDocument()
+  })
+
+  it('Arrow keys switch the active tab and move focus to it (WAI-ARIA tabs)', () => {
+    renderDesktop()
+    const existingTab = screen.getByRole('tab', { name: 'Use existing' })
+    const newTab = screen.getByRole('tab', { name: 'Create new' })
+    existingTab.focus()
+    expect(existingTab).toHaveFocus()
+
+    // ArrowRight → the "Create new" tab is selected, focused, and Tab-reachable.
+    fireEvent.keyDown(existingTab, { key: 'ArrowRight' })
+    expect(newTab).toHaveAttribute('aria-selected', 'true')
+    expect(newTab).toHaveFocus()
+    expect(newTab).toHaveAttribute('tabindex', '0')
+    expect(existingTab).toHaveAttribute('tabindex', '-1')
+    // The "Create new" panel is now shown.
+    expect(screen.getByLabelText('New entity name')).toBeInTheDocument()
+
+    // ArrowLeft → back to "Use existing", focus follows.
+    fireEvent.keyDown(newTab, { key: 'ArrowLeft' })
+    expect(existingTab).toHaveAttribute('aria-selected', 'true')
+    expect(existingTab).toHaveFocus()
+
+    // Home/End jump to the first/last tab.
+    fireEvent.keyDown(existingTab, { key: 'End' })
+    expect(newTab).toHaveFocus()
+    fireEvent.keyDown(newTab, { key: 'Home' })
+    expect(existingTab).toHaveFocus()
   })
 
   it('path a: searches and picks an existing entity', () => {

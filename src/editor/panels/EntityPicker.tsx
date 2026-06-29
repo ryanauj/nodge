@@ -14,9 +14,12 @@
  * Mobile-first (spec §10): on a phone-sized viewport it presents as a swipe-to-
  * dismiss **bottom sheet** (reusing {@link BottomSheet}); on wider viewports it is
  * a centered modal dialog. Both forms are a labelled `role="dialog"` with a
- * proper `tablist`, a navigable list, ≥44px hit targets, `Escape` to dismiss,
- * focus moved into the surface on open + trapped while open + returned to the
- * trigger on close, and visible `focus-visible` rings. No hover-only affordances.
+ * proper `tablist` (Arrow/Home/End move between tabs), a navigable list, ≥44px hit
+ * targets, `Escape` to dismiss, focus moved into the surface on open, returned to
+ * the trigger on close, and visible `focus-visible` rings. No hover-only
+ * affordances. The desktop dialog is modal and traps Tab; the mobile sheet is
+ * deliberately **non-modal** (`aria-modal="false"` — focus moved in + Esc, no Tab
+ * trap) so it reads as a drawer over the still-visible canvas.
  */
 
 import {
@@ -87,12 +90,14 @@ function PickerBody({
   onUseExisting,
   onCreateNew,
   createLabel,
+  tablistLabel,
 }: {
   entities: Entity[]
   nodePrototypes: Prototype[]
   onUseExisting: (entityId: string) => void
   onCreateNew: (name: string, nodePrototypeId: string | null) => void
   createLabel: string
+  tablistLabel: string
 }) {
   const [tab, setTab] = useState<'existing' | 'new'>('existing')
   const [query, setQuery] = useState('')
@@ -103,6 +108,9 @@ function PickerBody({
   const newTabId = `${baseId}-tab-new`
   const existingPanelId = `${baseId}-panel-existing`
   const newPanelId = `${baseId}-panel-new`
+  const existingTabRef = useRef<HTMLButtonElement | null>(null)
+  const newTabRef = useRef<HTMLButtonElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
 
   const filteredEntities = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -110,12 +118,62 @@ function PickerBody({
     return entities.filter((e) => e.name.toLowerCase().includes(q))
   }, [entities, query])
 
+  // Focus the search field once, on the picker's initial open — but NOT every
+  // time the existing tab re-mounts (e.g. switching back from "Create new" via
+  // arrow keys), which would yank focus off the tab and break the tabs pattern.
+  const didInitialFocus = useRef(false)
+  useEffect(() => {
+    if (didInitialFocus.current) return
+    didInitialFocus.current = true
+    searchRef.current?.focus()
+  }, [])
+
+  // WAI-ARIA tabs keyboard pattern: Arrow keys (and Home/End) move between tabs,
+  // selecting the focused one and moving DOM focus to it (the roving tabindex
+  // keeps only the selected tab in the Tab order). Without this the unselected
+  // tab is keyboard-unreachable.
+  const focusTab = useCallback((next: 'existing' | 'new') => {
+    setTab(next)
+    ;(next === 'existing' ? existingTabRef : newTabRef).current?.focus()
+  }, [])
+  const onTabsKeyDown = useCallback(
+    (e: ReactKeyboardEvent) => {
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          e.preventDefault()
+          focusTab(tab === 'existing' ? 'new' : 'existing')
+          break
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          e.preventDefault()
+          focusTab(tab === 'new' ? 'existing' : 'new')
+          break
+        case 'Home':
+          e.preventDefault()
+          focusTab('existing')
+          break
+        case 'End':
+          e.preventDefault()
+          focusTab('new')
+          break
+      }
+    },
+    [tab, focusTab],
+  )
+
   return (
     <div className="entity-picker-body">
-      <div className="entity-picker-tabs" role="tablist" aria-label="Add node by">
+      <div
+        className="entity-picker-tabs"
+        role="tablist"
+        aria-label={tablistLabel}
+        onKeyDown={onTabsKeyDown}
+      >
         <button
           type="button"
           role="tab"
+          ref={existingTabRef}
           id={existingTabId}
           aria-selected={tab === 'existing'}
           aria-controls={existingPanelId}
@@ -128,6 +186,7 @@ function PickerBody({
         <button
           type="button"
           role="tab"
+          ref={newTabRef}
           id={newTabId}
           aria-selected={tab === 'new'}
           aria-controls={newPanelId}
@@ -147,8 +206,8 @@ function PickerBody({
           aria-labelledby={existingTabId}
         >
           <input
+            ref={searchRef}
             type="search"
-            autoFocus
             aria-label="Search entities"
             placeholder="Search entities"
             value={query}
@@ -174,8 +233,10 @@ function PickerBody({
         >
           <label className="panel-field">
             <span>Name</span>
+            {/* No autoFocus here: stealing focus into this field on a keyboard
+                arrow tab-switch would break the WAI-ARIA tabs pattern (focus
+                must stay on the tab). The search field still autofocuses on open. */}
             <input
-              autoFocus
               aria-label="New entity name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -239,6 +300,9 @@ export function EntityPicker({
       onUseExisting={onUseExisting}
       onCreateNew={onCreateNew}
       createLabel={createLabel}
+      // Announce the tablist in the dialog's own context ("Add node by" /
+      // "Connect to by") so the edge-drop reuse isn't mislabelled.
+      tablistLabel={`${title} by`}
     />
   )
 
