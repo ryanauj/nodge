@@ -103,7 +103,7 @@ describe('Phase 2 — node↔prototype snapshot + refresh (§9.2)', () => {
     // Edit the prototype after snapshotting — no auto-propagation; refresh is opt-in.
     await gw.updatePrototype(proto.id, { style: { surface: '#fff', extra: 'x' }, metadata: { v: 2 } })
 
-    const result = await gw.refreshFromPrototype({ prototypeId: proto.id, all: true })
+    const result = await gw.refreshFromPrototype({ prototypeId: proto.id, all: true, diagramId })
     // refreshFromPrototype now returns the refreshed NODE ids.
     expect(result.refreshed.sort()).toEqual([e1.node.id, e2.node.id, e3.node.id].sort())
 
@@ -114,6 +114,181 @@ describe('Phase 2 — node↔prototype snapshot + refresh (§9.2)', () => {
     }
     const untouched = detail.nodes.find((x) => x.id === other.node.id)
     expect(untouched?.style).toEqual({ surface: '#orig' })
+  })
+
+  it('refresh by explicit ids only touches the named nodes (and returns them)', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const proto = await gw.createPrototype(graphId, {
+      kind: 'node',
+      name: 'Service',
+      style: { surface: '#aaa' },
+    })
+    const e1 = await gw.addNode(diagramId, layoutId, { name: 'a', x: 0, y: 0, nodePrototypeId: proto.id })
+    const e2 = await gw.addNode(diagramId, layoutId, { name: 'b', x: 1, y: 1, nodePrototypeId: proto.id })
+    await gw.updatePrototype(proto.id, { style: { surface: '#fff' } })
+
+    const result = await gw.refreshFromPrototype({ prototypeId: proto.id, ids: [e1.node.id] })
+    expect(result.refreshed).toEqual([e1.node.id])
+
+    const detail = await gw.getDiagram(diagramId)
+    expect(detail.nodes.find((n) => n.id === e1.node.id)?.style).toEqual({ surface: '#fff' })
+    // e2 is linked but was not named — left on its snapshot.
+    expect(detail.nodes.find((n) => n.id === e2.node.id)?.style).toEqual({ surface: '#aaa' })
+  })
+
+  it('refresh works for an edge prototype (all + ids), diagram membership traced, one undo', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId, layoutId } = await newGraph(gw)
+    const edgeProto = await gw.createPrototype(graphId, {
+      kind: 'edge',
+      name: 'Calls',
+      style: { stroke: '#111' },
+    })
+    const a = await gw.addNode(diagramId, layoutId, { name: 'a', x: 0, y: 0 })
+    const b = await gw.addNode(diagramId, layoutId, { name: 'b', x: 1, y: 1 })
+    const c = await gw.addNode(diagramId, layoutId, { name: 'c', x: 2, y: 2 })
+    const e1 = await gw.connectNodes(diagramId, {
+      sourceNodeId: a.node.id,
+      targetNodeId: b.node.id,
+      edgePrototypeId: edgeProto.id,
+    })
+    const e2 = await gw.connectNodes(diagramId, {
+      sourceNodeId: b.node.id,
+      targetNodeId: c.node.id,
+      edgePrototypeId: edgeProto.id,
+    })
+    expect(e1.edge.style).toMatchObject({ stroke: '#111' }) // edge snapshot-on-create
+
+    await gw.updatePrototype(edgeProto.id, { style: { stroke: '#999' } })
+
+    // Selective: only e1.
+    const sel = await gw.refreshFromPrototype({ prototypeId: edgeProto.id, ids: [e1.edge.id] })
+    expect(sel.refreshed).toEqual([e1.edge.id])
+    let detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e1.edge.id)?.style).toEqual({ stroke: '#999' })
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#111' })
+
+    // All: both edges of the prototype in this diagram, as one undoable command.
+    const all = await gw.refreshFromPrototype({ prototypeId: edgeProto.id, all: true, diagramId })
+    expect(all.refreshed.sort()).toEqual([e1.edge.id, e2.edge.id].sort())
+    detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#999' })
+
+    expect(await gw.undo()).toBe(true)
+    detail = await gw.getDiagram(diagramId)
+    expect(detail.edges.find((e) => e.id === e2.edge.id)?.style).toEqual({ stroke: '#111' })
+  })
+
+  it('createPrototypeFromNode / FromEdge do not relink the source (D9)', async () => {
+    const gw = await createMemoryGateway()
+    const { diagramId, layoutId } = await newGraph(gw)
+    const node = await gw.addNode(diagramId, layoutId, {
+      name: 'N',
+      x: 0,
+      y: 0,
+      style: { surface: '#abc' },
+    })
+    const a = await gw.addNode(diagramId, layoutId, { name: 'A', x: 5, y: 5 })
+    const conn = await gw.connectNodes(diagramId, {
+      sourceNodeId: node.node.id,
+      targetNodeId: a.node.id,
+    })
+
+    const nodeProto = await gw.createPrototypeFromNode({ nodeId: node.node.id, name: 'P' })
+    const edgeProto = await gw.createPrototypeFromEdge({ edgeId: conn.edge.id, name: 'E' })
+
+    const graph = await gw.getGraph(node.entity.graphId)
+    const entity = graph.entities.find((e) => e.id === node.entity.id)
+    const rel = graph.relationships.find((r) => r.id === conn.relationship.id)
+    // The new prototypes captured the look but the source links are unchanged (null).
+    expect(nodeProto.style).toMatchObject({ surface: '#abc' })
+    expect(entity?.nodePrototypeId).toBeNull()
+    expect(rel?.edgePrototypeId).toBeNull()
+    expect(edgeProto.kind).toBe('edge')
+  })
+
+  it('refresh {all} is diagram-scoped: a refresh in diagram A never touches the same entity in diagram B (§7/D1)', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId, diagramId: diagramA, layoutId: layoutA } = await newGraph(gw)
+    const nodeProto = await gw.createPrototype(graphId, {
+      kind: 'node',
+      name: 'Service',
+      style: { surface: '#aaa' },
+    })
+    const edgeProto = await gw.createPrototype(graphId, {
+      kind: 'edge',
+      name: 'Calls',
+      style: { stroke: '#111' },
+    })
+
+    // Diagram A: two prototype-linked nodes joined by a prototype-linked edge.
+    const a1 = await gw.addNode(diagramA, layoutA, {
+      name: 'A1',
+      x: 0,
+      y: 0,
+      nodePrototypeId: nodeProto.id,
+    })
+    const a2 = await gw.connectToNewEntity(diagramA, layoutA, {
+      sourceNodeId: a1.node.id,
+      name: 'A2',
+      x: 10,
+      y: 0,
+      nodePrototypeId: nodeProto.id,
+      edgePrototypeId: edgeProto.id,
+    })
+
+    // Diagram B places the SAME entities (and an edge for the same relationship).
+    const diagramB = await gw.createDiagram(graphId, { name: 'Diagram B' })
+    const layoutB = await gw.createLayout(diagramB.id, { name: 'Layout B' })
+    const b1 = await gw.placeEntity(diagramB.id, layoutB.id, { entityId: a1.entity.id, x: 0, y: 0 })
+    const b2 = await gw.placeEntity(diagramB.id, layoutB.id, { entityId: a2.entity.id, x: 10, y: 0 })
+    const bEdge = await gw.createEdge(diagramB.id, {
+      relationshipId: a2.relationship.id,
+      sourceNodeId: b1.node.id,
+      targetNodeId: b2.node.id,
+      style: { stroke: '#111' },
+    })
+
+    // Both diagrams currently show the original snapshot (placeEntity seeded B's
+    // nodes from the linked prototype; B's edge style was set explicitly).
+    expect(b1.node.style).toMatchObject({ surface: '#aaa' })
+    expect(bEdge.style).toMatchObject({ stroke: '#111' })
+
+    // Edit the prototypes, then refresh ONLY diagram A.
+    await gw.updatePrototype(nodeProto.id, { style: { surface: '#fff' } })
+    await gw.updatePrototype(edgeProto.id, { style: { stroke: '#999' } })
+    const nodeRefresh = await gw.refreshFromPrototype({
+      prototypeId: nodeProto.id,
+      all: true,
+      diagramId: diagramA,
+    })
+    const edgeRefresh = await gw.refreshFromPrototype({
+      prototypeId: edgeProto.id,
+      all: true,
+      diagramId: diagramA,
+    })
+    // Only A's placements are reported/refreshed.
+    expect(nodeRefresh.refreshed.sort()).toEqual([a1.node.id, a2.node.id].sort())
+    expect(edgeRefresh.refreshed).toEqual([a2.edge.id])
+
+    const detailA = await gw.getDiagram(diagramA)
+    const detailB = await gw.getDiagram(diagramB.id)
+    // A re-skinned to the new prototype styles.
+    expect(detailA.nodes.find((n) => n.id === a1.node.id)?.style).toEqual({ surface: '#fff' })
+    expect(detailA.edges.find((e) => e.id === a2.edge.id)?.style).toEqual({ stroke: '#999' })
+    // B — the SAME entities/relationship — is untouched: still on the old snapshot.
+    expect(detailB.nodes.find((n) => n.id === b1.node.id)?.style).toEqual({ surface: '#aaa' })
+    expect(detailB.edges.find((e) => e.id === bEdge.id)?.style).toEqual({ stroke: '#111' })
+  })
+
+  it('refresh {all} requires a diagramId', async () => {
+    const gw = await createMemoryGateway()
+    const { graphId } = await newGraph(gw)
+    const proto = await gw.createPrototype(graphId, { kind: 'node', name: 'P', style: {} })
+    await expect(gw.refreshFromPrototype({ prototypeId: proto.id, all: true })).rejects.toThrow(
+      /requires a diagramId/,
+    )
   })
 })
 

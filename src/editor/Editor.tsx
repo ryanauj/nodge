@@ -675,6 +675,7 @@ function EditorCanvas() {
         prototypes: (
           <PrototypePanel
             graphId={ids.graphId}
+            diagramId={ids.diagramId}
             selectedNodeId={selectedNodeId}
             selectedEdgeId={selectedEdgeId}
             onStampPrototype={(p) => stampPrototype.mutate(p)}

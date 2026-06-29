@@ -16,6 +16,11 @@ import type { Uuid } from '../../gateway'
 
 export interface PrototypePanelProps {
   graphId: Uuid
+  /**
+   * The active diagram. "Refresh all" is diagram-scoped (§7/D1 — the Diagram owns
+   * styling), so it only re-skins this diagram's placements of a prototype.
+   */
+  diagramId: Uuid
   /** The currently-selected node id, if any (enables "save node as prototype"). */
   selectedNodeId: Uuid | null
   /** The currently-selected edge id, if any (enables "save edge as prototype"). */
@@ -28,6 +33,7 @@ export interface PrototypePanelProps {
 
 export function PrototypePanel({
   graphId,
+  diagramId,
   selectedNodeId,
   selectedEdgeId,
   onStampPrototype,
@@ -60,7 +66,7 @@ export function PrototypePanel({
 
   const refresh = useMutation({
     mutationFn: async (id: Uuid) =>
-      (await getGateway()).refreshFromPrototype({ prototypeId: id, all: true }),
+      (await getGateway()).refreshFromPrototype({ prototypeId: id, all: true, diagramId }),
     onSuccess: afterMutation,
   })
 
