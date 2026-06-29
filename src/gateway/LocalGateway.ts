@@ -944,7 +944,13 @@ export class LocalGateway implements DataGateway {
    * Re-copy a prototype's current `style` onto the nodes/edges linked to it
    * (§9.2 — opt-in, never automatic). A node is "linked" when its entity's
    * `nodePrototypeId` is this prototype; an edge when its relationship's
-   * `edgePrototypeId` is. Supply explicit node/edge ids or `all: true`.
+   * `edgePrototypeId` is.
+   *
+   * Two scopes:
+   *  - `ids`: refresh exactly the named node/edge placements, regardless of diagram.
+   *  - `all: true`: refresh every linked node/edge **within `diagramId`** (§7/D1 —
+   *    the Diagram owns styling, so a batch refresh never reskins the same entity's
+   *    placement in other diagrams). `diagramId` is required for this path.
    */
   async refreshFromPrototype(
     input: RefreshFromPrototypeInput,
@@ -954,15 +960,23 @@ export class LocalGateway implements DataGateway {
       'prototype',
       input.prototypeId,
     )
+    if (input.all && !input.diagramId) {
+      throw new Error('refreshFromPrototype({ all: true }) requires a diagramId (§7/D1)')
+    }
+    // `all` is diagram-scoped (guarded above, so non-undefined here).
+    const scopeDiagramId = input.diagramId as Uuid
     if (proto.kind === 'node') {
       const entities = (await this.repo.list(entityTable, { graphId: proto.graphId })).filter(
         (e) => e.nodePrototypeId === proto.id,
       )
       const entityIds = new Set(entities.map((e) => e.id))
-      const linkedNodes = (await this.repo.list(nodeTable)).filter((n) => entityIds.has(n.entityId))
+      // `all` is diagram-scoped; `ids` operates on the named placements directly.
+      const candidates = input.all
+        ? await this.repo.list(nodeTable, { diagramId: scopeDiagramId })
+        : await this.repo.list(nodeTable)
       const targets = input.all
-        ? linkedNodes
-        : linkedNodes.filter((n) => (input.ids ?? []).includes(n.id))
+        ? candidates.filter((n) => entityIds.has(n.entityId))
+        : candidates.filter((n) => (input.ids ?? []).includes(n.id))
       const updated = targets.map((n) =>
         this.bumpVersion({ ...n, style: { ...proto.style } }),
       )
@@ -978,10 +992,12 @@ export class LocalGateway implements DataGateway {
       await this.repo.list(relationshipTable, { graphId: proto.graphId })
     ).filter((r) => r.edgePrototypeId === proto.id)
     const relIds = new Set(relationships.map((r) => r.id))
-    const linkedEdges = (await this.repo.list(edgeTable)).filter((e) => relIds.has(e.relationshipId))
+    const candidates = input.all
+      ? await this.repo.list(edgeTable, { diagramId: scopeDiagramId })
+      : await this.repo.list(edgeTable)
     const targets = input.all
-      ? linkedEdges
-      : linkedEdges.filter((e) => (input.ids ?? []).includes(e.id))
+      ? candidates.filter((e) => relIds.has(e.relationshipId))
+      : candidates.filter((e) => (input.ids ?? []).includes(e.id))
     const updated = targets.map((e) => this.bumpVersion({ ...e, style: { ...proto.style } }))
     await this.commands.execute(
       command('refreshFromPrototype', async (m) => {

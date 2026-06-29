@@ -59,6 +59,9 @@ export function PrototypePanel({
   })
 
   const refresh = useMutation({
+    // TODO(phase 7): refreshFromPrototype({ all }) is now diagram-scoped (§7/D1);
+    // pass the active diagramId here once this panel is wired to the editor's
+    // current diagram.
     mutationFn: async (id: Uuid) =>
       (await getGateway()).refreshFromPrototype({ prototypeId: id, all: true }),
     onSuccess: afterMutation,

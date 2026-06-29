@@ -249,15 +249,22 @@ export interface CreatePrototypeFromEdgeInput {
 
 /**
  * Refresh a prototype's current style onto nodes/edges linked to it (spec §9.2 —
- * opt-in, never automatic). Supply explicit ids, or `all: true` to batch every
- * linked node/edge of the prototype.
+ * opt-in, never automatic). Supply explicit `ids`, or `all: true` to batch every
+ * linked node/edge of the prototype **within a single diagram** (§7/D1: the
+ * Diagram owns styling, so `all` is diagram-scoped — it never reskins the same
+ * entity's placement in other diagrams the user isn't looking at).
  */
 export interface RefreshFromPrototypeInput {
   prototypeId: Uuid
-  /** Apply to these node ids (node prototype) / edge ids (edge prototype). */
+  /**
+   * Apply to these node ids (node prototype) / edge ids (edge prototype). Operates
+   * on exactly the given ids regardless of diagram.
+   */
   ids?: Uuid[]
-  /** Apply to every node/edge currently linked to the prototype. */
+  /** Apply to every node/edge linked to the prototype within `diagramId`. */
   all?: boolean
+  /** Required with `all: true`: the diagram to scope the batch refresh to. */
+  diagramId?: Uuid
 }
 
 export interface RefreshFromPrototypeResult {
