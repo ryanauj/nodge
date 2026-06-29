@@ -31,5 +31,7 @@ describe('Phase 6 — oplog schema', () => {
     expect(version).toBe(LATEST_SQLITE_VERSION)
     const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table'")
     expect(tables.map((t) => t.name)).toContain('oplog')
+    // v4 also lands on this path: no StyleProfile table survives.
+    expect(tables.map((t) => t.name)).not.toContain('style_profile')
   })
 })
