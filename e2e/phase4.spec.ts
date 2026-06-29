@@ -33,6 +33,17 @@ async function closeSheet(page: Page, title: string) {
   await expect(page.getByRole('dialog', { name: title })).toHaveCount(0)
 }
 
+/** Add a node through the entity picker (§9 / D6): open it, create a new entity. */
+async function addNodeViaPicker(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Add node' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add node' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('tab', { name: 'Create new' }).click()
+  await dialog.getByLabel('New entity name').fill(name)
+  await dialog.getByRole('button', { name: 'Create node' }).click()
+  await expect(page.getByRole('dialog', { name: 'Add node' })).toHaveCount(0)
+}
+
 test('palette boundaries expose CSS variables; chrome re-themes on apply', async ({ page }) => {
   const errors = trackErrors(page)
   await page.goto('/')
@@ -77,9 +88,10 @@ test('pin a node color writes its style; a palette swap no longer re-skins nodes
   const addNode = page.getByRole('button', { name: 'Add node' }).first()
   await expect(addNode).toBeEnabled()
 
-  // Two nodes; pin the first's surface, leave the second at its default snapshot.
-  await addNode.click()
-  await addNode.click()
+  // Two nodes (added via the entity picker); pin the first's surface, leave the
+  // second at its default snapshot.
+  await addNodeViaPicker(page, 'Pinned')
+  await addNodeViaPicker(page, 'Plain')
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 

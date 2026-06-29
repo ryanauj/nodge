@@ -34,6 +34,21 @@ async function closeSheet(page: Page, title: string) {
   await expect(page.getByRole('dialog', { name: title })).toHaveCount(0)
 }
 
+/**
+ * Add a node through the entity picker (§9 / D6): click the dock's Add button to
+ * open the picker dialog, then create a new entity with `name`. On desktop the
+ * picker is a centered modal; no anonymous `Node N`.
+ */
+async function addNodeViaPicker(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Add node' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Add node' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('tab', { name: 'Create new' }).click()
+  await dialog.getByLabel('New entity name').fill(name)
+  await dialog.getByRole('button', { name: 'Create node' }).click()
+  await expect(page.getByRole('dialog', { name: 'Add node' })).toHaveCount(0)
+}
+
 test('loads, adds two nodes and connects them with no console errors', async ({ page }) => {
   const errors = trackErrors(page)
 
@@ -43,9 +58,10 @@ test('loads, adds two nodes and connects them with no console errors', async ({ 
   const addNode = page.getByRole('button', { name: 'Add node' }).first()
   await expect(addNode).toBeEnabled()
 
-  await addNode.click()
+  // Each add goes through the entity picker (§9 / D6): create-new places a node.
+  await addNodeViaPicker(page, 'Alpha')
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
-  await addNode.click()
+  await addNodeViaPicker(page, 'Beta')
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
 
   // Let the canvas settle (background diagram refetch done) before the drag, so
@@ -143,7 +159,7 @@ test('Phase 3: create a second diagram, switch diagrams', async ({ page }) => {
   // Add a node on the new diagram (close the sheet so the dock is reachable),
   // then switch back to Diagram 1 (a separate subgraph).
   await closeSheet(page, 'Palette')
-  await addNode.click()
+  await addNodeViaPicker(page, 'D2 Node')
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
 
   paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
@@ -158,7 +174,7 @@ test('Phase 3: create a second diagram, switch diagrams', async ({ page }) => {
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
 
   // Add a node on Diagram 1 — it renders with the seeded default style.
-  await addNode.click()
+  await addNodeViaPicker(page, 'D1 Node')
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
 
   expect(errors).toEqual([])
@@ -169,8 +185,8 @@ test('restores the diagram from OPFS + the pointer after a reload', async ({ pag
   const addNode = page.getByRole('button', { name: 'Add node' }).first()
   await expect(addNode).toBeEnabled()
 
-  await addNode.click()
-  await addNode.click()
+  await addNodeViaPicker(page, 'Keep 1')
+  await addNodeViaPicker(page, 'Keep 2')
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
 
   // Reload: the active graph is reopened from the localStorage pointer and the

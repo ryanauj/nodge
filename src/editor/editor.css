@@ -145,21 +145,25 @@
   font-size: 12px;
 }
 
-/* ── Phase 2: drag-to-create quick-picker ── */
-.quickpicker-backdrop {
+/* ── Phase 2 / 6: shared entity picker (drag-to-create QuickPicker + add-node).
+   On a phone it renders inside the bottom sheet (.bottom-sheet styles apply);
+   on wider viewports it is the centered modal dialog below. Hit targets are
+   ≥44px throughout (§10.2). The body styles apply in both presentations. ── */
+.entity-picker-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 40;
 }
 
-.quickpicker {
-  background: #fff;
+.entity-picker {
+  background: var(--nodge-surface-raised, #fff);
+  color: var(--nodge-content-primary, inherit);
   border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--nodge-elevation-overlay, 0 6px 24px rgba(0, 0, 0, 0.3));
   width: 360px;
   max-width: 92vw;
   max-height: 80vh;
@@ -167,51 +171,92 @@
   padding: 12px;
 }
 
-.quickpicker-tabs {
+.entity-picker-header {
+  margin-bottom: 8px;
+}
+
+.entity-picker-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.entity-picker-tabs {
   display: flex;
   gap: 4px;
   margin-bottom: 10px;
 }
 
-.quickpicker-tabs button {
+.entity-picker-tabs button {
   flex: 1;
+  min-height: 44px;
   padding: 7px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.15));
   border-radius: 6px;
-  background: #f4f4f6;
+  background: var(--nodge-surface-sunken, #f4f4f6);
+  color: inherit;
   cursor: pointer;
 }
 
-.quickpicker-tabs button.active {
-  background: #4361ee;
-  color: #fff;
-  border-color: #4361ee;
+.entity-picker-tabs button.active {
+  background: var(--nodge-intent-primary-bg, #4361ee);
+  color: var(--nodge-intent-primary-content, #fff);
+  border-color: var(--nodge-intent-primary-border, #4361ee);
 }
 
-.quickpicker-body input,
-.quickpicker-body select {
+.entity-picker-body input,
+.entity-picker-body select,
+/* The Create tab's Name input + prototype select also carry `.panel-field`;
+   name them explicitly (higher specificity) so the ≥44px target is locked in
+   regardless of source order / the shared `.panel-field` rules. */
+.entity-picker-body .panel-field input,
+.entity-picker-body .panel-field select {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px 8px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.18));
   border-radius: 5px;
   margin-bottom: 8px;
   font: inherit;
+  background: var(--nodge-surface-base, #fff);
+  color: inherit;
 }
 
-.quickpicker-body button,
-.quickpicker-footer button {
-  min-height: 32px;
-  padding: 6px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
+/* Each existing-entity row + the create / cancel actions are ≥44px tap targets. */
+.entity-picker-list button,
+.entity-picker-primary,
+.entity-picker-footer button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.18));
   border-radius: 6px;
-  background: #fff;
+  background: var(--nodge-surface-base, #fff);
+  color: inherit;
   cursor: pointer;
 }
 
-.quickpicker-footer {
+.entity-picker-list button {
+  width: 100%;
+  text-align: left;
+}
+
+.entity-picker-primary {
+  width: 100%;
+}
+
+.entity-picker-footer {
   margin-top: 10px;
   text-align: right;
+}
+
+/* Visible focus rings on every interactive picker control (§10.4). */
+.entity-picker button:focus-visible,
+.entity-picker-body input:focus-visible,
+.entity-picker-body select:focus-visible,
+.bottom-sheet .entity-picker-body input:focus-visible,
+.bottom-sheet .entity-picker-body select:focus-visible {
+  outline: 2px solid var(--nodge-border-focus, #4361ee);
+  outline-offset: 2px;
 }
 
 /* ── Phase 4: palette editor / style-profile / link-unlink controls ── */
@@ -304,8 +349,7 @@
 .dock-grip:focus-visible,
 .dock-customize__toggle:focus-visible,
 .dock-customize__choice:focus-visible,
-.dock-customize__reset:focus-visible,
-.quickpicker button:focus-visible {
+.dock-customize__reset:focus-visible {
   outline: 2px solid var(--nodge-border-focus, #4361ee);
   outline-offset: 2px;
 }
