@@ -75,6 +75,7 @@ import { NodeStylePanel } from './panels/NodeStylePanel'
 import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { QuickPicker } from './panels/QuickPicker'
+import { EntityPicker } from './panels/EntityPicker'
 import { BottomSheet } from './panels/BottomSheet'
 import { FloatingDock } from './panels/FloatingDock'
 import { toolModeFlowProps, useToolMode, SHEET_LABELS, type SheetKey } from './toolMode'
@@ -193,6 +194,17 @@ function EditorCanvas() {
     prototypes: Prototype[]
   } | null>(null)
 
+  // Add-node entity-picker (§9 / D6) state. Adding a node — via the Add-mode pane
+  // tap or the dock's Add button — opens this picker AT THE TARGET POINT to choose
+  // an existing entity (→ placeEntity) or create a new one (→ addNode), instead of
+  // dropping an anonymous `Node N`.
+  const [addPickerCtx, setAddPickerCtx] = useState<{
+    x: number
+    y: number
+    entities: Entity[]
+    nodePrototypes: Prototype[]
+  } | null>(null)
+
   const { screenToFlowPosition, setViewport, getViewport } = useReactFlow()
 
   // Navigate to a board/view, persisting the current viewport first so each
@@ -252,26 +264,72 @@ function EditorCanvas() {
     [queryClient],
   )
 
-  const addNode = useMutation({
-    mutationFn: async () => {
-      const gw = await getGateway()
-      const count = nodesRef.current.length
-      // Spread placements clear of the top-left toolbar / edge chrome.
-      const x = 250 + (count % 5) * 180
-      const y = 200 + Math.floor(count / 5) * 120
-      return gw.addNode(ids!.diagramId, ids!.layoutId, { name: `Node ${count + 1}`, x, y })
+  // Open the add-node entity picker (§9 / D6) at a flow-space point. Loads the
+  // graph's entities + node prototypes so the picker can offer "use existing" /
+  // "create new". Used by both the Add-mode pane tap and the dock's Add button.
+  const openAddPicker = useCallback(
+    (x: number, y: number) => {
+      if (!ids) return
+      void getGateway().then(async (gw) => {
+        const graph = await gw.getGraph(ids.graphId)
+        setAddPickerCtx({
+          x,
+          y,
+          entities: graph.entities,
+          nodePrototypes: graph.prototypes.filter((p) => p.kind === 'node'),
+        })
+      })
     },
-    onSuccess: invalidateDiagram,
-  })
+    [ids, getGateway],
+  )
 
-  // Add a node at a specific flow-space point (Add-mode tap on empty canvas).
-  const addNodeAt = useMutation({
-    mutationFn: async ({ x, y }: { x: number; y: number }) => {
+  // Add-node button (dock FAB): open the picker at a placement clear of the
+  // top-left toolbar / edge chrome, spread by the current node count.
+  const onAddNodeButton = useCallback(() => {
+    if (!ids) return
+    const count = nodesRef.current.length
+    const x = 250 + (count % 5) * 180
+    const y = 200 + Math.floor(count / 5) * 120
+    openAddPicker(x, y)
+  }, [ids, openAddPicker])
+
+  // Create a brand-new entity + node at the picker's point (§9 / D6 path b). The
+  // prototype seeds a concrete style snapshot on the node (Phase 3 snapshot-on-create).
+  const addNamedNode = useMutation({
+    mutationFn: async ({
+      name,
+      nodePrototypeId,
+    }: {
+      name: string
+      nodePrototypeId: string | null
+    }) => {
       const gw = await getGateway()
-      const count = nodesRef.current.length
-      return gw.addNode(ids!.diagramId, ids!.layoutId, { name: `Node ${count + 1}`, x, y })
+      return gw.addNode(ids!.diagramId, ids!.layoutId, {
+        name,
+        x: addPickerCtx!.x,
+        y: addPickerCtx!.y,
+        nodePrototypeId,
+      })
     },
     onSuccess: async () => {
+      setAddPickerCtx(null)
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
+  // Place an existing entity as a new node at the picker's point (§9 / D6 path a).
+  const placeExisting = useMutation({
+    mutationFn: async (entityId: string) => {
+      const gw = await getGateway()
+      return gw.placeEntity(ids!.diagramId, ids!.layoutId, {
+        entityId,
+        x: addPickerCtx!.x,
+        y: addPickerCtx!.y,
+      })
+    },
+    onSuccess: async () => {
+      setAddPickerCtx(null)
       await invalidateDiagram()
       await refreshUndo()
     },
@@ -348,9 +406,12 @@ function EditorCanvas() {
     [mode, ids, connectSourceId, setConnectSource, connect],
   )
 
-  // Add mode (§10.2): a tap on empty canvas adds a node at that point. In other
-  // modes a pane tap just clears any pending connect source. React Flow delivers
-  // a React mouse event for pane clicks (a tap maps to a click on touch).
+  // Add mode (§10.2): a tap on empty canvas opens the entity picker at that point
+  // (§9 / D6) so the user chooses an existing entity or creates a new one — no
+  // anonymous `Node N`. In other modes a pane tap just clears any pending connect
+  // source. React Flow delivers a React mouse event for pane clicks (a tap maps to
+  // a click on touch). Opening the picker doesn't fight pan/zoom: the tap has
+  // already ended, and the picker is an overlay/sheet outside the canvas (§10.2).
   const onPaneClick = useCallback(
     (event: ReactMouseEvent) => {
       if (mode !== 'add' || !ids || !ready) {
@@ -358,9 +419,9 @@ function EditorCanvas() {
         return
       }
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      addNodeAt.mutate({ x: flowPos.x, y: flowPos.y })
+      openAddPicker(flowPos.x, flowPos.y)
     },
-    [mode, ids, ready, connectSourceId, setConnectSource, screenToFlowPosition, addNodeAt],
+    [mode, ids, ready, connectSourceId, setConnectSource, screenToFlowPosition, openAddPicker],
   )
 
   const connectToExisting = useMutation({
@@ -764,6 +825,21 @@ function EditorCanvas() {
         />
       )}
 
+      {/* Add-node entity picker (§9 / D6). Opened at the target point by the
+          Add-mode pane tap or the dock's Add button; existing → placeEntity,
+          new → addNode(name + nodePrototypeId). */}
+      {addPickerCtx && (
+        <EntityPicker
+          entities={addPickerCtx.entities}
+          nodePrototypes={addPickerCtx.nodePrototypes}
+          onUseExisting={(entityId) => placeExisting.mutate(entityId)}
+          onCreateNew={(name, nodePrototypeId) => addNamedNode.mutate({ name, nodePrototypeId })}
+          onCancel={() => setAddPickerCtx(null)}
+          title="Add node"
+          createLabel="Create node"
+        />
+      )}
+
       {/* Draggable floating dock — the single control surface on every viewport.
           A slim row (the Select/Connect/Add modes by default + undo/redo/add)
           plus an expandable, customisable panel for copy/paste, the panel
@@ -776,9 +852,9 @@ function EditorCanvas() {
           canUndo={canUndo}
           canRedo={canRedo}
           canAct={ready}
-          addBusy={addNode.isPending}
+          addBusy={!!addPickerCtx || placeExisting.isPending || addNamedNode.isPending}
           hasSelection={!!selectedNodeId}
-          onAddNode={() => addNode.mutate()}
+          onAddNode={onAddNodeButton}
           onUndo={() => undo.mutate()}
           onRedo={() => redo.mutate()}
           onCopy={() => void copySelection()}
