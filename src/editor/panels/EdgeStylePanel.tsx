@@ -42,21 +42,12 @@ const CONTROLS: Control[] = EDGE_PINNABLE_KEYS.map((key) =>
 export function EdgeStylePanel({ edgeId, resolved, onChanged }: EdgeStylePanelProps) {
   const getGateway = useGateway()
 
+  // Read the edge directly by id (§D4 / §10): the row carries its own full
+  // `style` (the pin state) and its base relationship's `edgePrototypeId`, so
+  // there's no O(graphs×diagrams) scan to find one edge's style.
   const edge = useQuery({
     queryKey: ['edge-style', edgeId],
-    queryFn: async () => {
-      const gw = await getGateway()
-      const graphs = await gw.listGraphs()
-      for (const g of graphs) {
-        const detail = await gw.getGraph(g.id)
-        for (const diagram of detail.diagrams) {
-          const dd = await gw.getDiagram(diagram.id)
-          const found = dd.edges.find((e) => e.id === edgeId)
-          if (found) return found
-        }
-      }
-      return null
-    },
+    queryFn: async () => (await getGateway()).getEdge(edgeId),
   })
 
   // The edge's style is the live source of truth for pin state.
@@ -68,6 +59,20 @@ export function EdgeStylePanel({ edgeId, resolved, onChanged }: EdgeStylePanelPr
   const save = useMutation({
     mutationFn: async (next: StyleDelta) =>
       (await getGateway()).updateEdge(edgeId, { style: next }),
+    onSuccess: async () => {
+      await edge.refetch()
+      onChanged()
+    },
+  })
+
+  // Re-apply the edge's linked EdgePrototype style onto this edge (§7 / D3 —
+  // explicit, undoable). Disabled when the relationship links no prototype.
+  const prototypeId = edge.data?.edgePrototypeId ?? null
+  const refresh = useMutation({
+    mutationFn: async () => {
+      if (!prototypeId) return
+      return (await getGateway()).refreshFromPrototype({ prototypeId, ids: [edgeId] })
+    },
     onSuccess: async () => {
       await edge.refetch()
       onChanged()
@@ -110,6 +115,22 @@ export function EdgeStylePanel({ edgeId, resolved, onChanged }: EdgeStylePanelPr
     <section className="panel" aria-label="Edge style">
       <h2 className="panel-title">Edge style</h2>
       <p className="panel-meta">Follows the palette unless pinned.</p>
+      <div className="panel-actions">
+        <button
+          type="button"
+          className="refresh-proto-btn"
+          aria-label="Refresh edge style from prototype"
+          disabled={!prototypeId || refresh.isPending}
+          title={
+            prototypeId
+              ? 'Re-apply the linked prototype style to this edge'
+              : 'This edge’s relationship links no prototype — nothing to refresh from'
+          }
+          onClick={() => refresh.mutate()}
+        >
+          Refresh from prototype
+        </button>
+      </div>
       <ul className="panel-list" aria-label="Edge style controls">
         {CONTROLS.map((control) => {
           const pinned = isPinned(override, control.key)

@@ -57,21 +57,12 @@ const CONTROLS: Control[] = [
 export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelProps) {
   const getGateway = useGateway()
 
+  // Read the node directly by id (§D4 / §10): the row carries its own full
+  // `style` (the pin state) and its base entity's `nodePrototypeId`, so there's
+  // no O(graphs×diagrams) scan to find one node's style.
   const node = useQuery({
     queryKey: ['node-style', nodeId],
-    queryFn: async () => {
-      const gw = await getGateway()
-      const graphs = await gw.listGraphs()
-      for (const g of graphs) {
-        const detail = await gw.getGraph(g.id)
-        for (const diagram of detail.diagrams) {
-          const dd = await gw.getDiagram(diagram.id)
-          const found = dd.nodes.find((n) => n.id === nodeId)
-          if (found) return found
-        }
-      }
-      return null
-    },
+    queryFn: async () => (await getGateway()).getNode(nodeId),
   })
 
   // The node's style is the live source of truth for pin state.
@@ -83,6 +74,20 @@ export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelPr
   const save = useMutation({
     mutationFn: async (next: StyleDelta) =>
       (await getGateway()).updateNode(nodeId, { style: next }),
+    onSuccess: async () => {
+      await node.refetch()
+      onChanged()
+    },
+  })
+
+  // Re-apply the node's linked NodePrototype style onto this node (§7 / D3 —
+  // explicit, undoable). Disabled when the entity links no prototype.
+  const prototypeId = node.data?.nodePrototypeId ?? null
+  const refresh = useMutation({
+    mutationFn: async () => {
+      if (!prototypeId) return
+      return (await getGateway()).refreshFromPrototype({ prototypeId, ids: [nodeId] })
+    },
     onSuccess: async () => {
       await node.refetch()
       onChanged()
@@ -125,6 +130,22 @@ export function NodeStylePanel({ nodeId, resolved, onChanged }: NodeStylePanelPr
     <section className="panel" aria-label="Node style">
       <h2 className="panel-title">Node style</h2>
       <p className="panel-meta">Follows the palette unless pinned.</p>
+      <div className="panel-actions">
+        <button
+          type="button"
+          className="refresh-proto-btn"
+          aria-label="Refresh node style from prototype"
+          disabled={!prototypeId || refresh.isPending}
+          title={
+            prototypeId
+              ? 'Re-apply the linked prototype style to this node'
+              : 'This node’s entity links no prototype — nothing to refresh from'
+          }
+          onClick={() => refresh.mutate()}
+        >
+          Refresh from prototype
+        </button>
+      </div>
       <ul className="panel-list" aria-label="Style controls">
         {CONTROLS.map((control) => {
           const pinned = isPinned(override, control.key)

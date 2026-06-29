@@ -41,6 +41,25 @@ export interface DiagramDetail extends Diagram {
   layouts: LayoutDetail[]
 }
 
+/**
+ * A single node placement read by id, enriched with its base entity's linked
+ * node prototype (§D4). Lets the style panel read the row's full `style` and
+ * resolve "Refresh from prototype" without scanning every diagram.
+ */
+export interface NodeDetail extends Node {
+  /** The node's entity's `nodePrototypeId`, or `null` if the entity links none. */
+  nodePrototypeId: Uuid | null
+}
+
+/**
+ * A single edge placement read by id, enriched with its base relationship's
+ * linked edge prototype (§D4) — the edge-style mirror of {@link NodeDetail}.
+ */
+export interface EdgeDetail extends Edge {
+  /** The edge's relationship's `edgePrototypeId`, or `null` if it links none. */
+  edgePrototypeId: Uuid | null
+}
+
 /** A graph with its base-layer collections (nested fetch). */
 export interface GraphDetail extends Graph {
   entities: Entity[]
@@ -445,9 +464,13 @@ export interface DataGateway {
   /** Delete a diagram and everything visual under it (nodes/edges/layouts/positions), one command. */
   deleteDiagram(id: Uuid): Promise<void>
   createNode(diagramId: Uuid, input: NodeInput): Promise<Node>
+  /** Read one node placement by id, enriched with its entity's node prototype (§D4). */
+  getNode(id: Uuid): Promise<NodeDetail>
   updateNode(id: Uuid, patch: NodePatch): Promise<Node>
   deleteNode(id: Uuid): Promise<void>
   createEdge(diagramId: Uuid, input: EdgeInput): Promise<Edge>
+  /** Read one edge placement by id, enriched with its relationship's edge prototype (§D4). */
+  getEdge(id: Uuid): Promise<EdgeDetail>
   /** Patch an edge placement's label / pinned style (§8.3), one command. */
   updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge>
   deleteEdge(id: Uuid): Promise<void>
