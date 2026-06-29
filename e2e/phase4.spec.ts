@@ -100,11 +100,13 @@ test('pin a node color writes its style; a palette swap no longer re-skins nodes
   // (§D10). The PINNED node carries its own red snapshot, so the swap to Midnight
   // must NOT override it.
   //
-  // NOTE: the UNPINNED node has no concrete style yet, so it still re-skins via
-  // palette fallback after the swap — its rendered color is palette-driven and
-  // timing-dependent in this phase, so we deliberately do not assert it. Once
-  // snapshot-on-create lands (Phase 3), every node gets a concrete seeded style
-  // and we'll restore the assertion that the unpinned node keeps its snapshot.
+  // NOTE: the UNPINNED node still re-skins via palette fallback after the swap.
+  // Snapshot-on-create (Phase 3) seeds a node's style from its linked
+  // NodePrototype, but the default "Add node" path passes no prototype, so the
+  // seeded snapshot is empty ({}) by design — there is no concrete surface to
+  // survive the swap. Strengthening this would require seeding a concrete
+  // default surface on the default prototype, a model change outside the style
+  // resolution phase, so we deliberately assert only the pinned node here.
   const paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
   const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
   await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })

@@ -1,7 +1,7 @@
 /**
- * Token-referenced style cascade (spec §8.3). Phase 4 widens the resolved style
- * to the full token contract (§8.2): shape (incl. diamond), border style,
- * background pattern and elevation, on top of the Phase-1 color/border/shape.
+ * Style cascade (design §6 / §D3). The resolved style spans the full token
+ * contract: surface/content/border colors, border width, shape (incl. diamond),
+ * border style, background pattern and elevation.
  *
  * A resolved style is computed by layering, later-wins:
  *
@@ -9,12 +9,15 @@
  *
  * For nodes the row layer is `node.style`; for edges it is `edge.style` (§D3).
  * The style is a full snapshot seeded from the row's NodePrototype/EdgePrototype
- * and refreshable; the prototype is not consulted at render time. The palette
- * supplies the fallback so any key the snapshot omits still resolves.
+ * and only changes via an explicit Refresh; the prototype is **not** consulted
+ * at render time, and there are no StyleProfile layers (§D5, removed entirely).
+ * The palette supplies a tolerant fallback so any key the snapshot omits still
+ * resolves — keeping resolution **total**. Because the row carries a concrete
+ * snapshot, swapping the palette no longer live-reskins pinned keys (§D10).
  *
- * Resolution stays **total** (every field has a fallback) and **backward
- * compatible**: the palette baseline is read tolerantly off `PaletteTokens`, so
- * the minimal Phase-1/3 `{ node, edge }` palettes still resolve and render.
+ * Resolution also stays **backward compatible**: the palette baseline is read
+ * tolerantly off `PaletteTokens`, so even a minimal `{ node, edge }` palette
+ * still resolves and renders.
  */
 
 import type { PaletteTokens, StyleDelta } from '../model'
@@ -77,8 +80,9 @@ const EDGE_FALLBACK: ResolvedEdgeStyle = { ...DEFAULT_EDGE_TOKENS }
 
 /**
  * The seeded default palette's tokens (spec §8.4 — built-ins at first run).
- * The full token contract is concrete here; nodes reference these by leaving
- * their overrides empty, so a later palette swap re-skins everything not pinned.
+ * The full token contract is concrete here; it serves as the render-time
+ * fallback and as a preset/seed source for new prototypes (§D10). It is no
+ * longer a live re-skin source: rows carry concrete snapshots.
  */
 export const DEFAULT_PALETTE_TOKENS: PaletteTokens = toPaletteTokens(DEFAULT_FULL_TOKENS)
 
@@ -86,9 +90,10 @@ export const DEFAULT_PALETTE_NAME = 'Default'
 
 /**
  * Built-in palette library (spec §8.4 — "built-ins seeded at first run"). Each
- * entry is a distinct full-token look; because `diagram.ts` resolves a view's
- * tokens from its palette and styles are token-referenced, assigning a palette
- * to a view re-skins everything not pinned. The token-level editor is Phase 4.
+ * entry is a distinct full-token look. Under §D10 palettes are demoted to
+ * app-chrome theme plus a preset/seed source for prototypes; they no longer
+ * live-reskin a canvas, because rows carry concrete style snapshots. At render
+ * time `diagram.ts` uses the palette only as a tolerant fallback.
  */
 export interface BuiltinPalette {
   name: string
