@@ -1,15 +1,15 @@
 /**
- * Component tests for the FloatingDock (spec §10.1, §10.2): the slim bar always
- * shows the Select/Connect/Add tool modes plus the controls placed `slim`; the
- * expand toggle reveals the rest; the display toggles drive the canvas-prefs
- * store; and the Customize picker moves a control between placements. Editing /
- * file actions are fired through the injected callbacks.
+ * Component tests for the FloatingDock (spec §10.1, §10.2): the slim bar shows
+ * the controls placed `slim`; the expand toggle reveals the rest; the display
+ * toggles drive the canvas-prefs store; and the Customize picker moves a control
+ * between placements. Interaction is mode-less, so there are no tool-mode
+ * buttons. Editing / file actions are fired through the injected callbacks.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { FloatingDock, type FloatingDockProps } from './FloatingDock'
-import { useToolMode } from '../toolMode'
+import { useSheets } from '../sheets'
 import { useCanvasPrefs } from '../canvasPrefs'
 import { useDockPrefs } from '../dockControls'
 
@@ -36,31 +36,22 @@ function renderDock(overrides: Partial<FloatingDockProps> = {}) {
 describe('FloatingDock', () => {
   beforeEach(() => {
     localStorage.clear()
-    useToolMode.setState({ mode: 'select', sheet: null, connectSourceId: null })
+    useSheets.setState({ sheet: null })
     useCanvasPrefs.setState({ showMinimap: false, showBackground: true })
     useDockPrefs.getState().resetPlacements()
   })
 
-  it('renders the tool modes and the default slim controls', () => {
+  it('renders the default slim controls and no tool-mode buttons', () => {
     renderDock()
     expect(screen.getByRole('toolbar', { name: 'Canvas tools' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Select mode' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect mode' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add mode' })).toBeInTheDocument()
     // Default slim controls.
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Redo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add node' })).toBeInTheDocument()
-  })
-
-  it('switches tool mode through the store', () => {
-    renderDock()
-    expect(screen.getByRole('button', { name: 'Select mode' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Connect mode' }))
-    expect(useToolMode.getState().mode).toBe('connect')
+    // Mode-less interaction (§10.2): no Select/Connect/Add mode buttons.
+    expect(screen.queryByRole('button', { name: 'Select mode' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect mode' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add mode' })).not.toBeInTheDocument()
   })
 
   it('disables and fires the editing actions per their enablement', () => {
@@ -105,14 +96,14 @@ describe('FloatingDock', () => {
     expect(useDockPrefs.getState().placements.save).toBe('slim')
   })
 
-  it('the tool modes are configurable: hiding them removes the mode buttons', () => {
+  it('a slim control can be hidden via Customize', () => {
     renderDock()
-    expect(screen.getByRole('button', { name: 'Select mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show more controls' }))
     fireEvent.click(screen.getByRole('button', { name: 'Customize' }))
-    const modesGroup = screen.getByRole('radiogroup', { name: 'Tool mode placement' })
-    fireEvent.click(within(modesGroup).getByRole('radio', { name: 'Hidden' }))
-    expect(useDockPrefs.getState().placements.modes).toBe('hidden')
-    expect(screen.queryByRole('button', { name: 'Select mode' })).not.toBeInTheDocument()
+    const undoGroup = screen.getByRole('radiogroup', { name: 'Undo placement' })
+    fireEvent.click(within(undoGroup).getByRole('radio', { name: 'Hidden' }))
+    expect(useDockPrefs.getState().placements.undo).toBe('hidden')
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
   })
 })

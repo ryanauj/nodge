@@ -37,6 +37,11 @@ export interface FlowNode {
   data: FlowNodeData
   /** React Flow selection flag — set programmatically to reveal/deselect a node. */
   selected?: boolean
+  /** Measured render size, populated by React Flow after layout (read-only for
+   *  us; used by marquee hit-testing to size a node's box, §10.2). */
+  measured?: { width?: number; height?: number }
+  width?: number
+  height?: number
 }
 
 export interface FlowEdge {

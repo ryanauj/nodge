@@ -34,6 +34,7 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
   const dragYRef = useRef(0)
   const startY = useRef<number | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
+  const sheetRef = useRef<HTMLDivElement | null>(null)
 
   // Reset any in-progress drag whenever the sheet (re)opens or closes.
   useEffect(() => {
@@ -42,10 +43,16 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
     startY.current = null
   }, [open])
 
-  // Move focus to the close button on open so the sheet is keyboard-operable
-  // and screen readers announce the dialog (spec §10.4).
+  // Move focus into the sheet on open so it is keyboard-operable and screen
+  // readers announce the dialog (spec §10.4). Focus the dialog *container* (not
+  // the close button) and only when the content hasn't already claimed focus —
+  // e.g. the entity picker autofocuses its search field. Focusing the close
+  // button drew a large focus ring in the corner on touch-open; the container is
+  // silent and non-visual.
   useEffect(() => {
-    if (open) closeRef.current?.focus()
+    if (!open) return
+    const root = sheetRef.current
+    if (root && !root.contains(document.activeElement)) root.focus()
   }, [open])
 
   // Esc dismisses the sheet (standard dialog keyboard affordance).
@@ -84,10 +91,12 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
 
   return (
     <div
+      ref={sheetRef}
       className="bottom-sheet"
       role="dialog"
       aria-modal="false"
       aria-label={title}
+      tabIndex={-1}
       style={{ transform: dragY ? `translateY(${dragY}px)` : undefined }}
     >
       <div

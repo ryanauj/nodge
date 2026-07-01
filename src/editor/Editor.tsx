@@ -9,24 +9,22 @@
  * boards/views/palette switchers drive navigation and `updateView`. Undo/redo,
  * save-to-file and load-from-file hang off the same seam.
  *
- * Phase 5 (§10.2): lightweight **tool modes** (Select / Connect / Add) in a
- * thumb-reach bottom toolbar configure React Flow per mode so gestures never
- * fight (pan vs. move vs. draw-an-edge). In Connect mode tap-source→tap-target
- * makes an edge; in Add mode a tap on empty canvas adds a node there. On narrow
- * viewports the side panels surface as swipe-to-dismiss **bottom sheets**. Tool
- * mode + sheet state is client UI state (the Zustand store), not gateway data.
- * Large-graph performance: visible-only rendering + a memoized transform.
+ * Interaction is **mode-less** (spec §10.2) — no Select/Connect/Add tool modes.
+ * Gestures disambiguate by what you touch and how:
+ *   - **tap** a node/edge = select it (single); **double-tap** = add/remove it
+ *     from the current selection (⌘/ctrl-click parity, {@link toggleSelection});
+ *   - **drag a node** = move it; **drag from a handle** = connect (drag to empty
+ *     opens the drag-to-create picker, §9.4);
+ *   - **long-press then drag** on empty canvas = marquee multi-select (we own the
+ *     gesture via pointer capture so it never fights the one-finger pan);
+ *   - **one-finger drag** on empty canvas = pan; **pinch** = zoom.
+ * Adding a node is the dock's **Add** button. On narrow viewports the side panels
+ * surface as swipe-to-dismiss **bottom sheets**; sheet state is client UI state
+ * (the Zustand store), not gateway data. Large-graph performance: visible-only
+ * rendering + a memoized transform.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Background,
@@ -39,6 +37,7 @@ import {
   useNodesState,
   useReactFlow,
   type Connection,
+  type EdgeMouseHandler,
   type FinalConnectionState,
   type NodeChange,
   type NodeMouseHandler,
@@ -79,7 +78,8 @@ import { QuickPicker } from './panels/QuickPicker'
 import { EntityPicker } from './panels/EntityPicker'
 import { BottomSheet } from './panels/BottomSheet'
 import { FloatingDock } from './panels/FloatingDock'
-import { toolModeFlowProps, useToolMode, SHEET_LABELS, type SheetKey } from './toolMode'
+import { useSheets, SHEET_LABELS, type SheetKey } from './sheets'
+import { marqueeRect, nodesInMarquee, toggleSelection, type NodeBox } from './selection'
 import { useCanvasPrefs } from './canvasPrefs'
 import './editor.css'
 
@@ -170,15 +170,13 @@ function EditorCanvas() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const selectedNodeIdsRef = useRef<string[]>([])
+  const selectedEdgeIdsRef = useRef<string[]>([])
 
-  // Phase 5 tool mode + transient sheet state (client UI state, §10.2/§11). The
-  // mode drives the React Flow interaction props so gestures never fight.
-  const mode = useToolMode((s) => s.mode)
-  const sheet = useToolMode((s) => s.sheet)
-  const closeSheet = useToolMode((s) => s.closeSheet)
-  const connectSourceId = useToolMode((s) => s.connectSourceId)
-  const setConnectSource = useToolMode((s) => s.setConnectSource)
-  const flowProps = useMemo(() => toolModeFlowProps(mode), [mode])
+  // Transient sheet state (client UI state, §10.1/§11). Interaction is mode-less
+  // (§10.2): the React Flow interaction props are fixed and gestures disambiguate
+  // by target (see the marquee + double-tap handlers below).
+  const sheet = useSheets((s) => s.sheet)
+  const closeSheet = useSheets((s) => s.closeSheet)
 
   // Canvas display prefs (persisted client UI state): the minimap and background
   // grid are toggleable from the floating settings panel (spec §10.1 chrome).
@@ -195,16 +193,29 @@ function EditorCanvas() {
     prototypes: Prototype[]
   } | null>(null)
 
-  // Add-node entity-picker (§9 / D6) state. Adding a node — via the Add-mode pane
-  // tap or the dock's Add button — opens this picker AT THE TARGET POINT to choose
-  // an existing entity (→ placeEntity) or create a new one (→ addNode), instead of
-  // dropping an anonymous `Node N`.
+  // Add-node entity-picker (§9 / D6) state. The dock's Add button opens this
+  // picker to choose an existing entity (→ placeEntity) or create a new one
+  // (→ addNode), instead of dropping an anonymous `Node N`.
   const [addPickerCtx, setAddPickerCtx] = useState<{
     x: number
     y: number
     entities: Entity[]
     nodePrototypes: Prototype[]
   } | null>(null)
+
+  // Long-press marquee (spec §10.2): a rectangle in *screen* coords while the
+  // gesture is live (null when idle). We own the gesture end-to-end via pointer
+  // capture so it never fights the one-finger pan; see the effect below.
+  const [marquee, setMarquee] = useState<{
+    x0: number
+    y0: number
+    x1: number
+    y1: number
+  } | null>(null)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  // Latest viewport-persist callback, read by the pane pointer effect (which is
+  // attached once) so an owned pan persists the viewport like a React Flow pan.
+  const onMoveEndRef = useRef<() => void>(() => {})
 
   const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow()
 
@@ -280,7 +291,7 @@ function EditorCanvas() {
 
   // Open the add-node entity picker (§9 / D6) at a flow-space point. Loads the
   // graph's entities + node prototypes so the picker can offer "use existing" /
-  // "create new". Used by both the Add-mode pane tap and the dock's Add button.
+  // "create new". Driven by the dock's Add button.
   const openAddPicker = useCallback(
     (x: number, y: number) => {
       if (!ids) return
@@ -297,15 +308,22 @@ function EditorCanvas() {
     [ids, getGateway],
   )
 
-  // Add-node button (dock FAB): open the picker at a placement clear of the
-  // top-left toolbar / edge chrome, spread by the current node count.
+  // Add-node button (dock FAB): open the picker near the CENTER of the current
+  // viewport (converted screen→flow) so a new node always lands on-screen at any
+  // pan/zoom, with a small cascade so repeated adds don't stack exactly.
   const onAddNodeButton = useCallback(() => {
     if (!ids) return
-    const count = nodesRef.current.length
-    const x = 250 + (count % 5) * 180
-    const y = 200 + Math.floor(count / 5) * 120
-    openAddPicker(x, y)
-  }, [ids, openAddPicker])
+    const rect = wrapperRef.current?.getBoundingClientRect()
+    const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
+    const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2
+    // Spread new nodes across a small 3×3 grid around the viewport centre so
+    // repeated adds stay on-screen without stacking on top of each other.
+    const n = nodesRef.current.length
+    const dx = ((n % 3) - 1) * 120
+    const dy = ((Math.floor(n / 3) % 3) - 1) * 96
+    const flow = screenToFlowPosition({ x: cx + dx, y: cy + dy })
+    openAddPicker(flow.x, flow.y)
+  }, [ids, screenToFlowPosition, openAddPicker])
 
   // Create a brand-new entity + node at the picker's point (§9 / D6 path b). The
   // prototype seeds a concrete style snapshot on the node (Phase 3 snapshot-on-create).
@@ -395,48 +413,188 @@ function EditorCanvas() {
     [ids, getGateway, screenToFlowPosition],
   )
 
-  // Connect mode (§10.2): tap a source node, then tap a target node → an edge.
-  // No dragging required, so it works cleanly on touch where a precise handle
-  // drag is awkward. The pending source is transient client UI state.
-  const onNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
-    (_event, node) => {
-      if (mode !== 'connect' || !ids) return
-      if (!connectSourceId) {
-        setConnectSource(node.id)
-        return
-      }
-      if (connectSourceId === node.id) {
-        setConnectSource(null)
-        return
-      }
-      connect.mutate({
-        source: connectSourceId,
-        target: node.id,
-        sourceHandle: null,
-        targetHandle: null,
-      })
-      setConnectSource(null)
+  // Apply an explicit multi-selection to the canvas (marquee + double-tap toggle
+  // both drive this). Setting each element's `selected` flag is how React Flow
+  // reflects a programmatic selection; it then fires `onSelectionChange`, which
+  // refreshes the panels. Selecting nodes clears edges and vice-versa is handled
+  // by passing both target sets.
+  const applySelection = useCallback(
+    (nodeIds: readonly string[], edgeIds: readonly string[]) => {
+      setNodes((nds) => nds.map((n) => ({ ...n, selected: nodeIds.includes(n.id) })))
+      setEdges((eds) => eds.map((e) => ({ ...e, selected: edgeIds.includes(e.id) })))
     },
-    [mode, ids, connectSourceId, setConnectSource, connect],
+    [setNodes, setEdges],
   )
 
-  // Add mode (§10.2): a tap on empty canvas opens the entity picker at that point
-  // (§9 / D6) so the user chooses an existing entity or creates a new one — no
-  // anonymous `Node N`. In other modes a pane tap just clears any pending connect
-  // source. React Flow delivers a React mouse event for pane clicks (a tap maps to
-  // a click on touch). Opening the picker doesn't fight pan/zoom: the tap has
-  // already ended, and the picker is an overlay/sheet outside the canvas (§10.2).
-  const onPaneClick = useCallback(
-    (event: ReactMouseEvent) => {
-      if (mode !== 'add' || !ids || !ready) {
-        if (connectSourceId) setConnectSource(null)
+  // Double-tap = add/remove from the selection (§10.2, ⌘/ctrl-click parity). A
+  // single tap is React Flow's default single-select; a second tap on the SAME
+  // element within the window toggles it against the selection as it was BEFORE
+  // the first tap (captured then, while the refs still hold the pre-tap set).
+  const DOUBLE_TAP_MS = 300
+  const lastTapRef = useRef<{
+    id: string
+    kind: 'node' | 'edge'
+    t: number
+    nodes: string[]
+    edges: string[]
+  } | null>(null)
+
+  const onElementClick = useCallback(
+    (kind: 'node' | 'edge', id: string) => {
+      const now = Date.now()
+      const prev = lastTapRef.current
+      if (prev && prev.kind === kind && prev.id === id && now - prev.t < DOUBLE_TAP_MS) {
+        lastTapRef.current = null
+        const nextNodes = kind === 'node' ? toggleSelection(prev.nodes, id) : prev.nodes
+        const nextEdges = kind === 'edge' ? toggleSelection(prev.edges, id) : prev.edges
+        // Defer past React Flow's own single-select for this second click so our
+        // additive selection lands on top and wins.
+        setTimeout(() => applySelection(nextNodes, nextEdges), 0)
         return
       }
-      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      openAddPicker(flowPos.x, flowPos.y)
+      // First tap: record the selection as it stands *before* React Flow's own
+      // single-select commits (onSelectionChange lags a render, so the refs still
+      // hold the pre-tap set here).
+      lastTapRef.current = {
+        id,
+        kind,
+        t: now,
+        nodes: selectedNodeIdsRef.current.slice(),
+        edges: selectedEdgeIdsRef.current.slice(),
+      }
     },
-    [mode, ids, ready, connectSourceId, setConnectSource, screenToFlowPosition, openAddPicker],
+    [applySelection],
   )
+
+  const onNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
+    (_event, node) => onElementClick('node', node.id),
+    [onElementClick],
+  )
+  const onEdgeClick = useCallback<EdgeMouseHandler<FlowEdge>>(
+    (_event, edge) => onElementClick('edge', edge.id),
+    [onElementClick],
+  )
+
+  // Finalize a marquee: select every node whose box overlaps the dragged rect
+  // (converted screen→flow), replacing the current selection.
+  const finishMarquee = useCallback(
+    (rectScreen: { x0: number; y0: number; x1: number; y1: number }) => {
+      const a = screenToFlowPosition({ x: rectScreen.x0, y: rectScreen.y0 })
+      const b = screenToFlowPosition({ x: rectScreen.x1, y: rectScreen.y1 })
+      const rect = marqueeRect({ x0: a.x, y0: a.y, x1: b.x, y1: b.y })
+      const boxes: NodeBox[] = nodesRef.current.map((n) => ({
+        id: n.id,
+        x: n.position.x,
+        y: n.position.y,
+        width: n.measured?.width ?? n.width ?? 120,
+        height: n.measured?.height ?? n.height ?? 40,
+      }))
+      applySelection(nodesInMarquee(boxes, rect), [])
+    },
+    [screenToFlowPosition, applySelection],
+  )
+
+  // Pane pointer gestures (spec §10.2): we own BOTH one-finger pan and the
+  // long-press-then-drag marquee, because React Flow's pan can't be reliably
+  // interrupted once its pointerdown has started it. So `panOnDrag` is off and:
+  //   - press on empty pane → start a long-press timer;
+  //   - move before it fires → it's a **pan**: we translate the viewport by the
+  //     drag delta (`setViewport`) for the rest of the gesture;
+  //   - the timer fires (held still) → **marquee**: subsequent moves grow the
+  //     box; release resolves the covered nodes into the selection.
+  // A press on a node/handle isn't a pane target, so node-drag and handle-connect
+  // are untouched. Listeners attach once; latest callbacks come via refs.
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+
+    const LONG_PRESS_MS = 380
+    const PAN_START_PX = 6
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let pointerId = -1
+    let phase: 'idle' | 'pan' | 'marquee' = 'idle'
+    let start = { x: 0, y: 0 }
+    let startVp = { x: 0, y: 0, zoom: 1 }
+    let live = { x0: 0, y0: 0, x1: 0, y1: 0 }
+
+    const clearTimer = () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+    }
+    const reset = () => {
+      clearTimer()
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onUp, true)
+      pointerId = -1
+      phase = 'idle'
+    }
+
+    const fire = () => {
+      timer = null
+      if (phase !== 'idle') return
+      phase = 'marquee'
+      live = { x0: start.x, y0: start.y, x1: start.x, y1: start.y }
+      setMarquee({ ...live })
+    }
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return
+      const dx = e.clientX - start.x
+      const dy = e.clientY - start.y
+      if (phase === 'idle') {
+        if (Math.hypot(dx, dy) <= PAN_START_PX) return
+        // Moved before the hold completed → this is a pan, not a marquee.
+        clearTimer()
+        phase = 'pan'
+      }
+      if (phase === 'pan') {
+        setViewport({ x: startVp.x + dx, y: startVp.y + dy, zoom: startVp.zoom })
+        return
+      }
+      // marquee
+      live = { ...live, x1: e.clientX, y1: e.clientY }
+      setMarquee({ ...live })
+    }
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return
+      if (phase === 'marquee') {
+        const snapshot = live
+        setMarquee(null)
+        // Defer: this same pointerup makes React Flow treat the pane as clicked
+        // and clear the selection. Apply our marquee selection on the next tick so
+        // it lands on top of (and wins) that deselect.
+        setTimeout(() => finishMarquee(snapshot), 0)
+      } else if (phase === 'pan') {
+        onMoveEndRef.current()
+      }
+      reset()
+    }
+
+    // Only the empty-canvas pane starts a pane gesture. Capture phase on the
+    // always-present wrapper so we see the pointerdown regardless of React Flow.
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      if (pointerId !== -1) return
+      const target = e.target as HTMLElement | null
+      if (!target?.classList.contains('react-flow__pane')) return
+      pointerId = e.pointerId
+      phase = 'idle'
+      start = { x: e.clientX, y: e.clientY }
+      startVp = getViewport()
+      clearTimer()
+      timer = setTimeout(fire, LONG_PRESS_MS)
+      window.addEventListener('pointermove', onMove, true)
+      window.addEventListener('pointerup', onUp, true)
+      window.addEventListener('pointercancel', onUp, true)
+    }
+
+    wrapper.addEventListener('pointerdown', onDown, true)
+    return () => {
+      reset()
+      wrapper.removeEventListener('pointerdown', onDown, true)
+    }
+  }, [finishMarquee, getViewport, setViewport])
 
   const connectToExisting = useMutation({
     mutationFn: async (entityId: string) => {
@@ -532,6 +690,8 @@ function EditorCanvas() {
       )
     }, POSITION_FLUSH_MS)
   }, [ids, getGateway, getViewport])
+  // Expose the latest viewport-persist to the once-attached pane pointer effect.
+  onMoveEndRef.current = onMoveEnd
 
   const undo = useMutation({
     mutationFn: async () => (await getGateway()).undo(),
@@ -552,6 +712,7 @@ function EditorCanvas() {
   const onSelectionChange = useCallback(
     ({ nodes: selNodes, edges: selEdges }: { nodes: FlowNode[]; edges: FlowEdge[] }) => {
       selectedNodeIdsRef.current = selNodes.map((n) => n.id)
+      selectedEdgeIdsRef.current = selEdges.map((e) => e.id)
       const firstNode = selNodes[0]
       setSelectedNodeId(firstNode?.id ?? null)
       setSelectedEntityId(firstNode ? (firstNode.data.entityId ?? null) : null)
@@ -810,48 +971,73 @@ function EditorCanvas() {
       testId="canvas-palette-root"
       style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh' }}
     >
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onConnectEnd={onConnectEnd}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onSelectionChange={onSelectionChange}
-        onMoveEnd={onMoveEnd}
-        fitView
-        proOptions={{ hideAttribution: true }}
-        // Phase 5 (§10.2): tool-mode-driven interaction props so pan vs. move vs.
-        // connect never fight. The mapping is the pure `toolModeFlowProps`.
-        panOnDrag={flowProps.panOnDrag}
-        selectionOnDrag={flowProps.selectionOnDrag}
-        nodesDraggable={flowProps.nodesDraggable}
-        nodesConnectable={flowProps.nodesConnectable}
-        elementsSelectable={flowProps.elementsSelectable}
-        zoomOnPinch={flowProps.zoomOnPinch}
-        panOnScroll={flowProps.panOnScroll}
-        // Large-graph performance (§12 Phase 5): only mount nodes/edges inside the
-        // viewport so a big board stays interactive; DB work stays in the worker.
-        onlyRenderVisibleElements
-      >
-        {showBackground && <Background />}
-        <Controls />
-        {showMinimap && <MiniMap pannable zoomable />}
-        {busy && (
-          <Panel position="top-center">
-            <span className="editor-status" data-testid="editor-busy">
-              {ready ? 'Syncing…' : 'Opening local store…'}
-            </span>
-          </Panel>
-        )}
-      </ReactFlow>
+      <div ref={wrapperRef} className="canvas-wrap">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectEnd={onConnectEnd}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onSelectionChange={onSelectionChange}
+          onMoveEnd={onMoveEnd}
+          fitView
+          proOptions={{ hideAttribution: true }}
+          // Mode-less interaction (§10.2): fixed props. Dragging a node moves it;
+          // dragging a handle connects; tap selects, double-tap toggles; pinch
+          // zooms. Pane panning AND the long-press marquee are owned by the
+          // pointer effect below (`panOnDrag`/`selectionOnDrag` off) so the two
+          // never fight — React Flow's own pan can't be interrupted mid-gesture,
+          // so we drive the viewport ourselves. Double-click zoom is off so a
+          // double-tap is free to toggle selection.
+          panOnDrag={false}
+          selectionOnDrag={false}
+          nodesDraggable
+          nodesConnectable
+          elementsSelectable
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          panOnScroll={false}
+          // Large-graph performance (§12 Phase 5): only mount nodes/edges inside the
+          // viewport so a big board stays interactive; DB work stays in the worker.
+          onlyRenderVisibleElements
+        >
+          {showBackground && <Background />}
+          <Controls />
+          {showMinimap && <MiniMap pannable zoomable />}
+          {busy && (
+            <Panel position="top-center">
+              <span className="editor-status" data-testid="editor-busy">
+                {ready ? 'Syncing…' : 'Opening local store…'}
+              </span>
+            </Panel>
+          )}
+        </ReactFlow>
+
+        {/* Long-press marquee overlay (§10.2) — purely visual (pointer-events
+            none); the pane pointer effect owns the gesture and just drives this
+            box. Only present while a marquee is live. */}
+        <div className="marquee-overlay" aria-hidden="true">
+          {marquee && (
+            <div
+              className="marquee-box"
+              style={{
+                left: Math.min(marquee.x0, marquee.x1),
+                top: Math.min(marquee.y0, marquee.y1),
+                width: Math.abs(marquee.x1 - marquee.x0),
+                height: Math.abs(marquee.y1 - marquee.y0),
+              }}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Bottom sheets host the panels on every viewport (the floating dock's
-          Panels buttons open them). Open/close is client UI state in the
-          tool-mode store; swipe or Esc dismisses (§10.1). */}
+          Panels buttons open them). Open/close is client UI state in the sheet
+          store; swipe or Esc dismisses (§10.1). */}
       {ids && sheet && availableSheets.has(sheet) && (
         <BottomSheet title={SHEET_LABELS[sheet]} open onClose={closeSheet}>
           {sheetGroups[sheet]}
@@ -869,9 +1055,8 @@ function EditorCanvas() {
         />
       )}
 
-      {/* Add-node entity picker (§9 / D6). Opened at the target point by the
-          Add-mode pane tap or the dock's Add button; existing → placeEntity,
-          new → addNode(name + nodePrototypeId). */}
+      {/* Add-node entity picker (§9 / D6). Opened by the dock's Add button;
+          existing → placeEntity, new → addNode(name + nodePrototypeId). */}
       {addPickerCtx && (
         <EntityPicker
           entities={addPickerCtx.entities}
@@ -885,11 +1070,10 @@ function EditorCanvas() {
       )}
 
       {/* Draggable floating dock — the single control surface on every viewport.
-          A slim row (the Select/Connect/Add modes by default + undo/redo/add)
-          plus an expandable, customisable panel for copy/paste, the panel
-          openers, the display toggles, and Save/Load. Tool/display state is
-          client UI state; the editing/file actions call back into the
-          gateway-backed mutations above. */}
+          A slim row (undo/redo/add by default) plus an expandable, customisable
+          panel for copy/paste, the panel openers, the display toggles, and
+          Save/Load. Display state is client UI state; the editing/file actions
+          call back into the gateway-backed mutations above. */}
       {ids && (
         <FloatingDock
           availableSheets={[...availableSheets]}
