@@ -502,6 +502,12 @@
 .canvas-wrap {
   position: absolute;
   inset: 0;
+  /* A long-press-then-drag marquee must never start a native text selection (it
+     would highlight the whole page) or the iOS callout; the canvas has no
+     inline-editable text, so selection is simply off here. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .marquee-overlay {

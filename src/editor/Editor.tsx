@@ -516,10 +516,20 @@ function EditorCanvas() {
     let start = { x: 0, y: 0 }
     let startVp = { x: 0, y: 0, zoom: 1 }
     let live = { x0: 0, y0: 0, x1: 0, y1: 0 }
+    // All pointers currently down anywhere — a second one means a pinch, which
+    // React Flow's `zoomOnPinch` owns, so we bail out of our single-finger gesture.
+    const active = new Set<number>()
 
     const clearTimer = () => {
       if (timer) clearTimeout(timer)
       timer = null
+    }
+    // While a pan/marquee drag is live, block the browser's native text selection
+    // (otherwise dragging highlights the whole page) and restore it on release.
+    const setUserSelect = (on: boolean) => {
+      const v = on ? '' : 'none'
+      document.body.style.userSelect = v
+      document.body.style.webkitUserSelect = v
     }
     const reset = () => {
       clearTimer()
@@ -528,18 +538,26 @@ function EditorCanvas() {
       window.removeEventListener('pointercancel', onUp, true)
       pointerId = -1
       phase = 'idle'
+      setMarquee(null)
+      setUserSelect(true)
     }
 
     const fire = () => {
       timer = null
       if (phase !== 'idle') return
       phase = 'marquee'
+      setUserSelect(false)
       live = { x0: start.x, y0: start.y, x1: start.x, y1: start.y }
       setMarquee({ ...live })
     }
 
     const onMove = (e: PointerEvent) => {
       if (e.pointerId !== pointerId) return
+      // A second finger arrived → this is a pinch. Abort so React Flow zooms.
+      if (active.size >= 2) {
+        reset()
+        return
+      }
       const dx = e.clientX - start.x
       const dy = e.clientY - start.y
       if (phase === 'idle') {
@@ -547,12 +565,15 @@ function EditorCanvas() {
         // Moved before the hold completed → this is a pan, not a marquee.
         clearTimer()
         phase = 'pan'
+        setUserSelect(false)
       }
       if (phase === 'pan') {
+        e.preventDefault()
         setViewport({ x: startVp.x + dx, y: startVp.y + dy, zoom: startVp.zoom })
         return
       }
       // marquee
+      e.preventDefault()
       live = { ...live, x1: e.clientX, y1: e.clientY }
       setMarquee({ ...live })
     }
@@ -571,13 +592,24 @@ function EditorCanvas() {
       reset()
     }
 
+    // Track every pointer so we can tell single-finger (pan/marquee) from a
+    // two-finger pinch. Capture phase so the count is current before onDown runs.
+    const onAnyDown = (e: PointerEvent) => active.add(e.pointerId)
+    const onAnyUp = (e: PointerEvent) => active.delete(e.pointerId)
+
     // Only the empty-canvas pane starts a pane gesture. Capture phase on the
     // always-present wrapper so we see the pointerdown regardless of React Flow.
     const onDown = (e: PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return
-      if (pointerId !== -1) return
       const target = e.target as HTMLElement | null
       if (!target?.classList.contains('react-flow__pane')) return
+      // Second finger down → a pinch is starting; drop any single-finger gesture
+      // and let React Flow handle the zoom.
+      if (active.size >= 2) {
+        reset()
+        return
+      }
+      if (pointerId !== -1) return
       pointerId = e.pointerId
       phase = 'idle'
       start = { x: e.clientX, y: e.clientY }
@@ -589,9 +621,15 @@ function EditorCanvas() {
       window.addEventListener('pointercancel', onUp, true)
     }
 
+    window.addEventListener('pointerdown', onAnyDown, true)
+    window.addEventListener('pointerup', onAnyUp, true)
+    window.addEventListener('pointercancel', onAnyUp, true)
     wrapper.addEventListener('pointerdown', onDown, true)
     return () => {
       reset()
+      window.removeEventListener('pointerdown', onAnyDown, true)
+      window.removeEventListener('pointerup', onAnyUp, true)
+      window.removeEventListener('pointercancel', onAnyUp, true)
       wrapper.removeEventListener('pointerdown', onDown, true)
     }
   }, [finishMarquee, getViewport, setViewport])
