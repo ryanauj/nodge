@@ -201,8 +201,11 @@
   padding: 7px;
   border: 1px solid var(--nodge-border-default, rgba(0, 0, 0, 0.15));
   border-radius: 6px;
-  background: var(--nodge-surface-sunken, #f4f4f6);
-  color: inherit;
+  /* An unselected tab is still an enabled control: use the raised surface + full
+     content color so it never reads as disabled next to the vivid active tab. */
+  background: var(--nodge-surface-raised, #fff);
+  color: var(--nodge-content-primary, inherit);
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -492,6 +495,30 @@
   outline-offset: 2px;
 }
 
+/* ── Canvas wrapper + long-press marquee overlay (spec §10.2). The wrapper fills
+   the palette-root canvas boundary; the overlay sits above React Flow and is
+   purely visual (always click-through) — the Editor's pane pointer effect owns
+   the gesture and drives the selection box drawn here. ── */
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.marquee-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.marquee-box {
+  position: absolute;
+  border: 1px solid var(--nodge-border-focus, #4361ee);
+  background: color-mix(in srgb, var(--nodge-border-focus, #4361ee) 16%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 /* ── Draggable floating dock — the single control surface on every viewport: a
    slim always-visible bar (tool modes + the controls placed `slim`) plus an
    expandable panel and a Customize section. Fixed at the user's persisted
@@ -534,16 +561,9 @@
   cursor: grabbing;
 }
 
-.dock-modes,
 .dock-slim {
   display: flex;
   gap: 4px;
-}
-
-.dock-slim {
-  padding-left: 4px;
-  margin-left: 2px;
-  border-left: 1px solid var(--nodge-border-subtle, rgba(0, 0, 0, 0.12));
 }
 
 /* Shared button base: tool modes, slim icon buttons, expanded rows. */
@@ -579,19 +599,7 @@
   gap: 0;
 }
 
-.dock-mode-btn {
-  flex-direction: column;
-  gap: 2px;
-  min-width: 52px;
-  padding: 4px 8px;
-}
-
-.dock-mode-btn .dock-btn__label {
-  font-size: 11px;
-  line-height: 1;
-}
-
-/* Pressed tool mode + an "on" slim toggle share the primary highlight. */
+/* An "on" slim toggle shares the primary highlight. */
 .dock-btn[aria-pressed='true'],
 .dock-btn--on {
   background: var(--nodge-intent-primary-bg, #4361ee);

@@ -49,7 +49,7 @@ Every choice below was deliberately selected during design. Rationale is summari
 | 11 | Entity↔Prototype link | **One-time seed, link persists**: no auto-propagation on prototype edit; opt-in **refresh from prototype** (per node/entity or batched) | §9.2 |
 | 12 | Edges & relationships | **Full parallel to nodes**: base **Relationship** between entities + **RelationshipPrototype** (relationship *types*); edges are placements | §5.3, §9 |
 | 13 | File format | **JSON primary** (`.nodge.json`, versioned/diffable/sync-aligned) **+ raw `.sqlite` export**; JSON always loads *into* the WASM SQLite runtime | §6.4 |
-| 14 | Mobile UX | **One responsive app, deliberate touch model** — gesture disambiguation, tool modes, big targets, bottom-sheet panels | §10 |
+| 14 | Mobile UX | **One responsive app, deliberate touch model** — mode-less gesture disambiguation (tap/double-tap/long-press marquee/handle-drag), big targets, bottom-sheet panels | §10 |
 | 15 | Build sequencing | **Thin vertical slice first, then layer** (Phases 0→6) | §12 |
 
 ---
@@ -409,9 +409,17 @@ A **single responsive app** with a deliberate touch interaction model — mobile
 - **Desktop:** collapsible side panels (properties, prototype library, cross-reference, palette).
 - **Mobile:** **bottom-sheet** panels that slide up over the bottom edge, leaving the canvas visible; a **thumb-reach bottom toolbar**; a **FAB** for add-node.
 
-### 10.2 Touch interaction model
-- **Gesture disambiguation:** one-finger drag on empty canvas = **pan**; one-finger drag on a selected node = **move**; pinch = **zoom**; tap = **select**; long-press = **context menu / multi-select**.
-- **Lightweight tool modes** in the bottom toolbar (**Select / Connect / Add**) so "draw an edge" never fights "pan." In **Connect** mode: tap source → tap target = edge; drag-to-empty still opens the prototype picker.
+### 10.2 Touch interaction model (mode-less)
+The canvas is **mode-less** — there is no Select / Connect / Add tool switch. Gestures disambiguate by *what you touch and how*, so "draw an edge" never fights "pan" without a mode toggle to remember:
+
+- **Tap** a node/edge = **select** it (single). **Double-tap** a node/edge = **add/remove** it from the current selection (touch parity with ⌘/ctrl-click). Tap empty canvas = deselect.
+- **Drag a node** = **move** it. **Drag from a node's handle** = **connect**; dragging a connection into empty canvas opens the drag-to-create prototype picker (§9.4).
+- **Long-press then drag** on empty canvas = **marquee** multi-select (hold ~380 ms, then drag a box).
+- **One-finger drag** on empty canvas = **pan**; **pinch** = **zoom**.
+- **Adding a node** is an explicit action — the dock's **Add** button — which opens the entity picker (§9 / D6) and drops the node in the current view.
+
+Because React Flow decides pan-vs-select at pointer-down (and its pan can't be interrupted mid-gesture), the editor **owns the pane pointer gestures itself** (`panOnDrag`/`selectionOnDrag` off): one code path detects the long-press to split pan from marquee and drives the viewport/selection directly. This is the single seam guaranteeing the gestures never conflict.
+
 - **Big touch targets:** ≥44px hit areas; enlarged connect affordances appear on the selected node; handles are finger-sized, not hover-tiny.
 - **Bottom-sheet editing** for node/edge/prototype/palette properties; swipe to dismiss.
 
@@ -439,7 +447,7 @@ A **single responsive app** with a deliberate touch interaction model — mobile
 | Canvas | **`@xyflow/react`** (React Flow) | same as site; nodes/edges/handles/minimap/pan-zoom |
 | Local DB | **SQLite-WASM** (`wa-sqlite` or official SQLite WASM) + **OPFS** | runs in a Web Worker |
 | Server state/cache | **React Query** | wraps the gateway |
-| Client/UI state | lightweight store (**Zustand**) | selection, tool mode, transient canvas state |
+| Client/UI state | lightweight store (**Zustand**) | selection, open bottom sheet, transient canvas state |
 | Routing | **React Router** | graphs / boards / views URLs |
 | Forms | React Hook Form (panels) | |
 | IDs | UUID v4 (client) | |
@@ -496,7 +504,7 @@ A **single responsive app** with a deliberate touch interaction model — mobile
 - **Acceptance:** user creates a custom palette, applies it to a view and the app chrome, pins one node's color and confirms it survives a palette swap.
 
 ### Phase 5 — Mobile polish & UX
-- Full **touch model** (modes, gestures, big targets, bottom sheets, FAB).
+- Full **touch model** (mode-less gestures, big targets, bottom sheets, FAB).
 - Responsive refinement, accessibility pass, `prefers-reduced-motion`.
 - **Large-graph performance** (virtualization, worker offload, lazy effects).
 - **Acceptance:** core flows (add/connect/style/switch view/save) are smooth on a phone; Playwright mobile-viewport smoke passes; no gesture conflicts.

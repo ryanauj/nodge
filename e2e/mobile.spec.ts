@@ -2,17 +2,19 @@ import { expect, test, type Page } from '@playwright/test'
 
 /**
  * Phase 5 mobile smoke (spec §12 acceptance). At a phone viewport (the Pixel 5
- * project, touch enabled) this exercises the full touch interaction model:
+ * project, touch enabled) this exercises the mode-less touch interaction model
+ * (spec §10.2):
  *   - loads with no console errors;
- *   - switches tool mode (Select → Add → Connect) via the floating dock's slim bar;
- *   - adds two nodes by tapping empty canvas in Add mode → the entity-picker bottom
- *     sheet (§9 / D6) → "Create new" (gesture model, no anonymous `Node N`);
- *   - connects them in Connect mode by tapping source then target (tap→tap edge);
- *   - expands the dock, opens a bottom-sheet panel and dismisses it (swipe/close);
+ *   - adds two nodes via the dock's Add button → the entity-picker bottom sheet
+ *     (§9 / D6) → "Create new" (no anonymous `Node N`);
+ *   - connects them by dragging from one node's source handle to the other's
+ *     target handle (handle-to-handle connect);
+ *   - long-presses then drags on empty canvas to marquee-select both nodes;
+ *   - expands the dock, opens a bottom-sheet panel and dismisses it;
  *   - reloads and the diagram is restored from OPFS + the pointer.
  *
- * Also a no-gesture-conflict proof: in Add mode tapping empty canvas opens the
- * picker (it is not swallowed by a pan); in Connect mode two taps make an edge.
+ * Also a no-gesture-conflict proof: a plain one-finger drag on empty canvas pans
+ * (draws nothing), while a long-press-then-drag draws a marquee.
  */
 
 function trackErrors(page: Page): string[] {
@@ -24,18 +26,12 @@ function trackErrors(page: Page): string[] {
   return errors
 }
 
-/** Tap a point in the React Flow pane (empty canvas), avoiding the chrome. */
-async function tapPane(page: Page, x: number, y: number) {
-  await page.locator('.react-flow__pane').tap({ position: { x, y } })
-}
-
 /**
- * Add a node through the entity picker (§9 / D6): trigger the picker (a pane tap
- * in Add mode, or the dock's Add button), then on the bottom-sheet "Add node"
- * dialog create a new entity with `name`. No anonymous `Node N`.
+ * Add a node through the entity picker (§9 / D6): tap the dock's Add button, then
+ * on the bottom-sheet "Add node" dialog create a new entity with `name`.
  */
-async function createNodeViaPicker(page: Page, name: string, trigger: () => Promise<void>) {
-  await trigger()
+async function createNode(page: Page, dock: ReturnType<Page['getByRole']>, name: string) {
+  await dock.getByRole('button', { name: 'Add node' }).tap()
   const sheet = page.getByRole('dialog', { name: 'Add node' })
   await expect(sheet).toBeVisible()
   await sheet.getByRole('tab', { name: 'Create new' }).tap()
@@ -44,7 +40,7 @@ async function createNodeViaPicker(page: Page, name: string, trigger: () => Prom
   await expect(page.getByRole('dialog', { name: 'Add node' })).toHaveCount(0)
 }
 
-test('mobile touch model: switch mode, add + connect via taps, sheet, reload', async ({
+test('mobile touch model: add via picker, connect via handles, marquee, reload', async ({
   page,
 }) => {
   const errors = trackErrors(page)
@@ -53,48 +49,56 @@ test('mobile touch model: switch mode, add + connect via taps, sheet, reload', a
 
   // Bootstrap completes → the floating dock's slim bar is present (mobile only).
   const dock = page.getByRole('region', { name: 'Canvas controls' })
-  const toolbar = dock.getByRole('toolbar', { name: 'Canvas tools' })
-  await expect(toolbar).toBeVisible()
-  const selectMode = dock.getByRole('button', { name: 'Select mode' })
-  const addMode = dock.getByRole('button', { name: 'Add mode' })
-  const connectMode = dock.getByRole('button', { name: 'Connect mode' })
-  await expect(selectMode).toHaveAttribute('aria-pressed', 'true')
+  await expect(dock.getByRole('toolbar', { name: 'Canvas tools' })).toBeVisible()
 
-  // Wait until the canvas is ready (the dock's add-node button enables).
+  // Mode-less: there are no Select/Connect/Add mode buttons.
+  await expect(dock.getByRole('button', { name: 'Select mode' })).toHaveCount(0)
+  await expect(dock.getByRole('button', { name: 'Connect mode' })).toHaveCount(0)
+
   await expect(dock.getByRole('button', { name: 'Add node' })).toBeEnabled()
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
-  // ── Switch to Add mode and add two nodes: each pane tap opens the entity
-  //    picker bottom sheet; "Create new" places the node (§9 / D6). ──
-  await addMode.tap()
-  await expect(addMode).toHaveAttribute('aria-pressed', 'true')
-
-  await createNodeViaPicker(page, 'First', () => tapPane(page, 100, 160))
+  // ── Add two nodes via the Add button + picker. ──
+  await createNode(page, dock, 'First')
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
-  await createNodeViaPicker(page, 'Second', () => tapPane(page, 100, 420))
+  await createNode(page, dock, 'Second')
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
-  // ── Switch to Connect mode; tap source node then target node = an edge. ──
-  await connectMode.tap()
-  await expect(connectMode).toHaveAttribute('aria-pressed', 'true')
-
-  const nodes = page.locator('.react-flow__node')
-  await nodes.nth(0).tap()
-  await nodes.nth(1).tap()
+  // ── Connect by dragging from the left node's source handle to the right node's
+  //    target handle (handle-to-handle connect, §10.2). DOM order follows node id,
+  //    not screen position, so pick by x so the handles face each other. ──
+  const box0 = await page.locator('.react-flow__node').nth(0).boundingBox()
+  const box1 = await page.locator('.react-flow__node').nth(1).boundingBox()
+  if (!box0 || !box1) throw new Error('nodes not found')
+  const leftIndex = box0.x <= box1.x ? 0 : 1
+  const rightIndex = leftIndex === 0 ? 1 : 0
+  const source = page
+    .locator('.react-flow__node')
+    .nth(leftIndex)
+    .locator('.react-flow__handle.source')
+  const target = page
+    .locator('.react-flow__node')
+    .nth(rightIndex)
+    .locator('.react-flow__handle.target')
+  const s = await source.boundingBox()
+  const t = await target.boundingBox()
+  if (!s || !t) throw new Error('handles not found')
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
+  await page.mouse.down()
+  await page.mouse.move((s.x + t.x) / 2, (s.y + t.y) / 2, { steps: 6 })
+  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 6 })
+  await page.mouse.up()
   await expect(page.locator('.react-flow__edge')).toHaveCount(1)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
   // ── Expand the dock, open a bottom-sheet panel (Palette) and dismiss it. ──
   await dock.getByRole('button', { name: 'Show more controls' }).tap()
-  const paletteTab = dock.getByRole('button', { name: 'Palette panel' })
-  await paletteTab.tap()
+  await dock.getByRole('button', { name: 'Palette panel' }).tap()
   const sheet = page.getByRole('dialog', { name: 'Palette' })
   await expect(sheet).toBeVisible()
-  // The side-panel column is hidden on mobile; the sheet hosts the panels.
   await expect(sheet.getByRole('region', { name: 'Diagrams and layouts' })).toBeVisible()
-
   await sheet.getByRole('button', { name: 'Close Palette' }).tap()
   await expect(page.getByRole('dialog', { name: 'Palette' })).toHaveCount(0)
 
@@ -106,36 +110,47 @@ test('mobile touch model: switch mode, add + connect via taps, sheet, reload', a
   expect(errors).toEqual([])
 })
 
-test('mobile: in Select mode a one-finger pane drag pans (no stray edge/node)', async ({
-  page,
-}) => {
+test('mobile: one-finger pane drag pans; long-press-then-drag marquees', async ({ page }) => {
   const errors = trackErrors(page)
   await page.goto('/')
   const dock = page.getByRole('region', { name: 'Canvas controls' })
   await expect(dock.getByRole('button', { name: 'Add node' })).toBeEnabled()
 
-  // Add one node (via the picker) so there is something to (not) disturb.
-  await createNodeViaPicker(page, 'Anchor', () =>
-    dock.getByRole('button', { name: 'Add node' }).tap(),
-  )
+  await createNode(page, dock, 'Anchor')
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
   await expect(page.getByTestId('editor-busy')).toHaveCount(0)
 
-  // Select mode is the default. A drag across empty canvas pans — it must not
-  // create a node or an edge (gesture disambiguation, spec §10.2).
-  await expect(dock.getByRole('button', { name: 'Select mode' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
   const pane = page.locator('.react-flow__pane')
   const box = await pane.boundingBox()
   if (!box) throw new Error('pane not found')
-  await page.mouse.move(box.x + 80, box.y + 120)
+
+  // A plain drag across empty canvas pans — it must not create a node or edge.
+  await page.mouse.move(box.x + 60, box.y + 120)
   await page.mouse.down()
-  await page.mouse.move(box.x + 200, box.y + 240, { steps: 8 })
+  await page.mouse.move(box.x + 200, box.y + 260, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(0)
+
+  // Deselect, then long-press (hold still) before dragging → a marquee that
+  // sweeps over the node selects it. Node width defaults small; sweep a wide box
+  // from an empty corner across where the node sits.
+  const nodeBox = await page.locator('.react-flow__node').first().boundingBox()
+  if (!nodeBox) throw new Error('node not found')
+  const startX = box.x + 20
+  const startY = box.y + 20
+  await page.mouse.move(startX, startY)
+  await page.mouse.down()
+  // Hold past the long-press threshold (380ms) without moving.
+  await page.waitForTimeout(550)
+  await page.mouse.move(nodeBox.x + nodeBox.width + 20, nodeBox.y + nodeBox.height + 20, {
+    steps: 12,
+  })
   await page.mouse.up()
 
-  // Still exactly one node, no edge — the pan did not draw anything.
+  // The node is now selected (React Flow marks the selected class).
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(1)
+  // Nothing was created by the marquee.
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
   await expect(page.locator('.react-flow__edge')).toHaveCount(0)
 

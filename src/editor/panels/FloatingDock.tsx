@@ -4,19 +4,21 @@
  * DraggableControls. It replaces the old fixed bottom tool bar and the separate
  * add button with one surface the user can drag anywhere and customise.
  *
- * Two levels of progressive disclosure:
- *   - **Slim bar** (always visible): the Select/Connect/Add tool modes — the
- *     core interaction gesture, pinned here — plus whichever controls the user
- *     has placed `slim` (Undo/Redo/Add by default), and an expand toggle.
+ * With the mode-less interaction model (spec §10.2) there are no Select/Connect/
+ * Add tool buttons: selecting, connecting and marquee-ing are all gestures on the
+ * canvas. The dock is purely a control surface with two levels of progressive
+ * disclosure:
+ *   - **Slim bar** (always visible): whichever controls the user has placed
+ *     `slim` (Undo/Redo/Add by default), plus an expand toggle.
  *   - **Expanded panel** (toggled): the controls placed `expanded`, grouped by
  *     category (Panels / Edit / Display / File), plus a **Customize** section
  *     that moves any control between Slim / Expanded / Hidden.
  *
  * The dock is data-driven: every configurable control is a {@link DOCK_CONTROLS}
  * registry entry and its surface is its placement in the {@link useDockPrefs}
- * store. Tool modes and the panel/display toggles are client UI state; only the
- * editing/file actions reach the gateway, via the callbacks passed in. Position
- * and expanded state persist to localStorage; dragging uses pointer capture.
+ * store. The panel/display toggles are client UI state; only the editing/file
+ * actions reach the gateway, via the callbacks passed in. Position and expanded
+ * state persist to localStorage; dragging uses pointer capture.
  */
 
 import {
@@ -27,13 +29,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from 'react'
-import {
-  TOOL_MODES,
-  TOOL_MODE_LABELS,
-  useToolMode,
-  type SheetKey,
-  type ToolMode,
-} from '../toolMode'
+import { useSheets, type SheetKey } from '../sheets'
 import { useCanvasPrefs } from '../canvasPrefs'
 import {
   DOCK_CATEGORIES,
@@ -44,13 +40,6 @@ import {
   type DockControlDef,
   type Placement,
 } from '../dockControls'
-
-/** Decorative glyphs for the three tool modes (hidden from assistive tech). */
-const TOOL_MODE_ICONS: Record<ToolMode, string> = {
-  select: '⬚',
-  connect: '↦',
-  add: '＋',
-}
 
 /** Callbacks + enablement for the editing/file actions, which reach the gateway
  *  and so are owned by the editor rather than the dock. */
@@ -144,10 +133,8 @@ function Toggle({
 
 export function FloatingDock(props: FloatingDockProps) {
   const { availableSheets } = props
-  const mode = useToolMode((s) => s.mode)
-  const setMode = useToolMode((s) => s.setMode)
-  const sheet = useToolMode((s) => s.sheet)
-  const toggleSheet = useToolMode((s) => s.toggleSheet)
+  const sheet = useSheets((s) => s.sheet)
+  const toggleSheet = useSheets((s) => s.toggleSheet)
 
   const showMinimap = useCanvasPrefs((s) => s.showMinimap)
   const showBackground = useCanvasPrefs((s) => s.showBackground)
@@ -297,30 +284,8 @@ export function FloatingDock(props: FloatingDockProps) {
     )
   }
 
-  /** The Select/Connect/Add segmented tool-mode group (placement-configurable). */
-  const renderModes = () => (
-    <div key="modes" className="dock-modes" role="group" aria-label="Tool mode">
-      {TOOL_MODES.map((m) => (
-        <button
-          key={m}
-          type="button"
-          className="dock-btn dock-mode-btn"
-          aria-pressed={mode === m}
-          aria-label={`${TOOL_MODE_LABELS[m]} mode`}
-          onClick={() => setMode(m)}
-        >
-          <span className="dock-btn__icon" aria-hidden="true">
-            {TOOL_MODE_ICONS[m]}
-          </span>
-          <span className="dock-btn__label">{TOOL_MODE_LABELS[m]}</span>
-        </button>
-      ))}
-    </div>
-  )
-
   /** A full icon+label control for the expanded panel. */
   const renderExpanded = (def: DockControlDef) => {
-    if (def.kind === 'modes') return renderModes()
     if (def.kind === 'toggle') {
       const checked = def.id === 'toggle:minimap' ? showMinimap : showBackground
       const onChange = def.id === 'toggle:minimap' ? setShowMinimap : setShowBackground
@@ -345,10 +310,7 @@ export function FloatingDock(props: FloatingDockProps) {
     )
   }
 
-  const modesPlacement = placements['modes'] ?? 'slim'
-  const slimControls = DOCK_CONTROLS.filter(
-    (d) => d.id !== 'modes' && placements[d.id] === 'slim',
-  )
+  const slimControls = DOCK_CONTROLS.filter((d) => placements[d.id] === 'slim')
   const isBottomHalf = typeof window !== 'undefined' && pos.y > window.innerHeight / 2
   const isRightHalf = typeof window !== 'undefined' && pos.x > window.innerWidth / 2
   const containerStyle: CSSProperties = { left: pos.x, top: pos.y }
@@ -374,7 +336,6 @@ export function FloatingDock(props: FloatingDockProps) {
         >
           ⠿
         </span>
-        {modesPlacement === 'slim' && renderModes()}
         {slimControls.length > 0 && (
           <div className="dock-slim" role="group" aria-label="Quick controls">
             {slimControls.map(renderSlim)}

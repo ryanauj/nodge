@@ -19,7 +19,6 @@ describe('dockControls registry', () => {
     const ids = DOCK_CONTROLS.map((d) => d.id)
     expect(ids).toEqual(
       expect.arrayContaining([
-        'modes',
         'undo',
         'redo',
         'add',
@@ -36,10 +35,11 @@ describe('dockControls registry', () => {
         'load',
       ]),
     )
+    // Mode-less interaction (§10.2): there is no tool-mode control.
+    expect(ids).not.toContain('modes')
   })
 
-  it('the tool modes and editing essentials default to the slim row, the rest to expanded', () => {
-    expect(defaultPlacement('modes')).toBe('slim')
+  it('the editing essentials default to the slim row, the rest to expanded', () => {
     expect(defaultPlacement('undo')).toBe('slim')
     expect(defaultPlacement('redo')).toBe('slim')
     expect(defaultPlacement('add')).toBe('slim')

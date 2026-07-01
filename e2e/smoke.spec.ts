@@ -101,6 +101,35 @@ test('loads, adds two nodes and connects them with no console errors', async ({ 
   expect(errors).toEqual([])
 })
 
+test('mode-less selection: tap selects one, double-tap adds/removes (⌘-click parity)', async ({
+  page,
+}) => {
+  const errors = trackErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+
+  await addNodeViaPicker(page, 'One')
+  await addNodeViaPicker(page, 'Two')
+  await expect(page.locator('.react-flow__node')).toHaveCount(2)
+  await expect(page.getByTestId('editor-busy')).toHaveCount(0)
+
+  const nodes = page.locator('.react-flow__node')
+
+  // A single tap selects exactly one node.
+  await nodes.nth(0).click()
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(1)
+
+  // Double-tapping the OTHER node adds it to the selection (both selected).
+  await nodes.nth(1).dblclick()
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2)
+
+  // Double-tapping it again removes it (back to just the first).
+  await nodes.nth(1).dblclick()
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(1)
+
+  expect(errors).toEqual([])
+})
+
 test('Phase 2: prototype library stamps a node and selection opens properties', async ({
   page,
 }) => {
