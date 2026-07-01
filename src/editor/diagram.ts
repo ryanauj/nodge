@@ -91,14 +91,28 @@ export interface DiagramSnapshot {
   paletteTokens: PaletteTokens
 }
 
-/** Gather a diagram's data through the gateway and build the render snapshot. */
-export async function loadDiagram(gw: DataGateway, ids: DiagramIds): Promise<DiagramSnapshot> {
+/**
+ * Gather a diagram's data through the gateway and build the render snapshot.
+ *
+ * `canvasPaletteId` is the client-side canvas-theme selection (§8.4 / §D10 — a
+ * view preference, not graph data). When it names one of the graph's palettes we
+ * theme the canvas with it; otherwise we fall back to the graph's default palette
+ * (`ids.paletteId`) and then to the built-in defaults, so resolution stays total
+ * even when the persisted selection points at a palette from another graph.
+ */
+export async function loadDiagram(
+  gw: DataGateway,
+  ids: DiagramIds,
+  canvasPaletteId?: string | null,
+): Promise<DiagramSnapshot> {
   const [graph, diagram] = await Promise.all([
     gw.getGraph(ids.graphId),
     gw.getDiagram(ids.diagramId),
   ])
   const layout = diagram.layouts.find((l) => l.id === ids.layoutId) ?? diagram.layouts[0]
-  const palette = graph.palettes.find((p) => p.id === ids.paletteId)
+  const palette =
+    (canvasPaletteId && graph.palettes.find((p) => p.id === canvasPaletteId)) ||
+    graph.palettes.find((p) => p.id === ids.paletteId)
 
   const entities = new Map(graph.entities.map((e) => [e.id, e]))
   const relationships = new Map(graph.relationships.map((r) => [r.id, r]))

@@ -65,12 +65,13 @@ import {
 import { NodgeNode } from './NodgeNode'
 import { PaletteRoot } from './PaletteRoot'
 import { DEFAULT_PALETTE_TOKENS } from './style'
-import { setChromePaletteId } from './appSettings'
+import { setChromePaletteId, getCanvasPaletteId, setCanvasPaletteId } from './appSettings'
 import { BoardViewBar } from './panels/BoardViewBar'
 import { EntityPanel } from './panels/EntityPanel'
 import { PaletteSwitcher } from './panels/PaletteSwitcher'
 import { PaletteEditor } from './panels/PaletteEditor'
 import { NodeStylePanel } from './panels/NodeStylePanel'
+import { NodeTemplatesPanel } from './panels/NodeTemplatesPanel'
 import { EdgeStylePanel } from './panels/EdgeStylePanel'
 import { PrototypePanel } from './panels/PrototypePanel'
 import { RelationshipsPanel } from './panels/RelationshipsPanel'
@@ -151,9 +152,19 @@ function EditorCanvas() {
   const ready =
     !!ids && ids.diagramId === routeDiagramId && ids.layoutId === routeLayoutId
 
+  // The canvas palette is a client-side view preference (§8.4 / §D10): it themes
+  // the canvas the diagram renders into (its background + any unpinned style
+  // keys) without touching per-node style snapshots. Persisted in appSettings so
+  // the choice survives a reload; `null` means "the graph's default palette",
+  // which resolves from `ids.paletteId`.
+  const [canvasPaletteId, setCanvasPaletteIdState] = useState<string | null>(() =>
+    getCanvasPaletteId(),
+  )
+  const effectiveCanvasPaletteId = canvasPaletteId ?? ids?.paletteId ?? null
+
   const diagram = useQuery({
-    queryKey: ['diagram', ids?.graphId, ids?.diagramId, ids?.layoutId],
-    queryFn: async () => loadDiagram(await getGateway(), ids!),
+    queryKey: ['diagram', ids?.graphId, ids?.diagramId, ids?.layoutId, effectiveCanvasPaletteId],
+    queryFn: async () => loadDiagram(await getGateway(), ids!, effectiveCanvasPaletteId),
     enabled: !!ids,
   })
 
@@ -287,6 +298,19 @@ function EditorCanvas() {
       void queryClient.invalidateQueries({ queryKey: ['chrome-palette'] })
     },
     [queryClient],
+  )
+
+  // Apply a palette as the canvas theme (spec §8.4) — the per-view PaletteRoot
+  // boundary around the ReactFlow canvas. Persists the pointer (localStorage) and
+  // updates the state so the `['diagram', …, canvasPaletteId]` query re-resolves
+  // the canvas tokens immediately; the change is non-destructive (pinned per-node
+  // styles keep their snapshots, §D10).
+  const applyCanvasPalette = useCallback(
+    (paletteId: string) => {
+      setCanvasPaletteId(paletteId)
+      setCanvasPaletteIdState(paletteId)
+    },
+    [],
   )
 
   // Open the add-node entity picker (§9 / D6) at a flow-space point. Loads the
@@ -932,8 +956,8 @@ function EditorCanvas() {
             />
             <PaletteSwitcher
               graphId={ids.graphId}
-              currentPaletteId={ids.paletteId}
-              onSelect={(paletteId) => applyChromePalette(paletteId)}
+              currentPaletteId={effectiveCanvasPaletteId}
+              onSelect={(paletteId) => applyCanvasPalette(paletteId)}
             />
             <PaletteEditor
               graphId={ids.graphId}
@@ -950,6 +974,13 @@ function EditorCanvas() {
         properties:
           (selectedNodeId && selectedNodeStyle) || (selectedEdgeId && selectedEdgeStyle) ? (
             <>
+              {selectedNodeId && selectedNodeStyle && (
+                <NodeTemplatesPanel
+                  key={`templates-${selectedNodeId}`}
+                  nodeId={selectedNodeId}
+                  onChanged={() => void invalidateDiagram()}
+                />
+              )}
               {selectedNodeId && selectedNodeStyle && (
                 <NodeStylePanel
                   key={selectedNodeId}

@@ -1,9 +1,13 @@
 /**
- * Palette switcher (spec §8.4; §D10 — palettes demoted to app-chrome theme +
- * preset/seed source). Lists the graph's palettes (the seeded built-in library
- * plus any user palettes) and reports the chosen one up via `onSelect`. Per-canvas
- * palette assignment was removed (§D10): node/edge styles are concrete snapshots,
- * so the palette is a chrome theme / fallback, not a live per-canvas reskin.
+ * Palette switcher (spec §8.4). Lists the graph's palettes (the seeded built-in
+ * library plus any user palettes) and reports the chosen one up via `onSelect`.
+ *
+ * The parent (`Editor`) treats the selection as the **canvas theme**: a
+ * client-side view preference that re-skins the canvas background and any
+ * unpinned style keys through the per-view `PaletteRoot`. It is deliberately
+ * non-destructive — per-node/edge styles are concrete snapshots (§D10), so
+ * switching the palette never overwrites a pinned value; it only changes what the
+ * still-linked keys fall back to.
  */
 
 import { useQuery } from '@tanstack/react-query'

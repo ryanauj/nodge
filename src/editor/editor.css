@@ -895,3 +895,43 @@
   stroke: var(--nodge-border-focus, #4361ee) !important;
   stroke-width: 3 !important;
 }
+
+/* ── Node quick-style templates (spec §8.3). A responsive grid of preview
+   swatches; each swatch paints itself with its own template so the look is
+   legible before it is applied. Swatches are ≥44px tap targets (spec §10.2) and
+   keep their own colors — they intentionally do NOT theme from the palette. ── */
+.template-group {
+  margin-bottom: 4px;
+}
+
+.template-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.template-swatch {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  /* Backgroundcolor/color/border/border-radius come from the inline template
+     style; the box-shadow gives every swatch a small, uniform lift. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.template-swatch:focus-visible {
+  outline: 2px solid var(--nodge-border-focus, #4361ee);
+  outline-offset: 2px;
+}
+
+.template-swatch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

@@ -87,6 +87,34 @@ describe('loadDiagram', () => {
   })
 })
 
+describe('loadDiagram — canvas palette override (§8.4 canvas theme)', () => {
+  it('themes the canvas with the selected palette, not just the default one', async () => {
+    const gw = await createMemoryGateway()
+    const ids = await bootstrapOrOpen(gw, memoryStorage())
+
+    const palettes = await gw.listPalettes(ids.graphId)
+    // The default (ids.paletteId) is the first seeded palette; pick a different one.
+    const alt = palettes.find((p) => p.id !== ids.paletteId)!
+
+    const onDefault = await loadDiagram(gw, ids)
+    const onAlt = await loadDiagram(gw, ids, alt.id)
+
+    expect(onAlt.paletteTokens).toEqual(alt.tokens)
+    expect(onAlt.paletteTokens).not.toEqual(onDefault.paletteTokens)
+  })
+
+  it('falls back to the graph default when the selection is unknown', async () => {
+    const gw = await createMemoryGateway()
+    const ids = await bootstrapOrOpen(gw, memoryStorage())
+
+    const onDefault = await loadDiagram(gw, ids)
+    const onStale = await loadDiagram(gw, ids, 'not-a-real-palette-id')
+
+    // A stale/foreign selection resolves to the same tokens as no selection.
+    expect(onStale.paletteTokens).toEqual(onDefault.paletteTokens)
+  })
+})
+
 describe('toFlowNodes / toFlowEdges — §D3 / §D10 resolution', () => {
   it('renders a concrete snapshot; a palette swap does NOT change it', () => {
     const snapshot = { surface: '#ff0000' }

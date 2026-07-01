@@ -142,3 +142,61 @@ test('pin a node color writes its style; a palette swap no longer re-skins nodes
 
   expect(errors).toEqual([])
 })
+
+test('selecting a canvas palette re-themes the canvas background', async ({ page }) => {
+  const errors = trackErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+
+  // The canvas PaletteRoot starts on the default palette's canvas color.
+  const canvas = page.getByTestId('canvas-palette-root')
+  const before = await canvas.evaluate(
+    (el) => getComputedStyle(el).getPropertyValue('--nodge-surface-canvas').trim(),
+  )
+
+  // Choose "Midnight" in the Canvas palette switcher (the control the user
+  // reported as inert). It must actually re-theme the canvas boundary.
+  const paletteSheet = await openDockPanel(page, 'Palette', 'Palette')
+  const palettePanel = paletteSheet.getByRole('region', { name: 'Palette', exact: true })
+  await palettePanel.getByLabel('Canvas palette').selectOption({ label: 'Midnight' })
+  await closeSheet(page, 'Palette')
+
+  // Midnight's canvas color is #111827 — the boundary now exposes it, proving the
+  // selection is no longer a no-op.
+  await expect
+    .poll(async () =>
+      canvas.evaluate((el) =>
+        getComputedStyle(el).getPropertyValue('--nodge-surface-canvas').trim(),
+      ),
+    )
+    .toBe('#111827')
+  expect(before).not.toBe('#111827')
+  expect(errors).toEqual([])
+})
+
+test('a node quick-style template applies its look in one click', async ({ page }) => {
+  const errors = trackErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+
+  await addNodeViaPicker(page, 'Templated')
+  await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  await expect(page.getByTestId('editor-busy')).toHaveCount(0)
+
+  // Select the node and open Properties → Quick styles sits above Node style.
+  await page.locator('.react-flow__node').first().click()
+  const propsSheet = await openDockPanel(page, 'Properties', 'Properties')
+  const templates = propsSheet.getByRole('region', { name: 'Node templates' })
+  await expect(templates).toBeVisible()
+
+  // Apply the Neubrutalist template → the node takes its yellow surface (#ffd84d).
+  await templates.getByLabel('Apply Neubrutalist style').click()
+  await expect
+    .poll(async () =>
+      page
+        .locator('.nodge-node')
+        .evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor)),
+    )
+    .toEqual(['rgb(255, 216, 77)'])
+  expect(errors).toEqual([])
+})
