@@ -78,6 +78,14 @@ export const DOCK_CONTROLS: DockControlDef[] = [
   { id: 'undo', label: 'Undo', ariaLabel: 'Undo', icon: '↶', kind: 'action', category: 'Edit' },
   { id: 'redo', label: 'Redo', ariaLabel: 'Redo', icon: '↷', kind: 'action', category: 'Edit' },
   { id: 'add', label: 'Add', ariaLabel: 'Add node', icon: '＋', kind: 'action', category: 'Edit' },
+  {
+    id: 'delete',
+    label: 'Delete',
+    ariaLabel: 'Delete selection',
+    icon: '🗑',
+    kind: 'action',
+    category: 'Edit',
+  },
   { id: 'copy', label: 'Copy', ariaLabel: 'Copy', icon: '⧉', kind: 'action', category: 'Edit' },
   { id: 'paste', label: 'Paste', ariaLabel: 'Paste', icon: '⎘', kind: 'action', category: 'Edit' },
   ...SHEET_KEYS.map(
@@ -123,6 +131,7 @@ const DEFAULT_PLACEMENTS: Record<string, Placement> = {
   undo: 'slim',
   redo: 'slim',
   add: 'slim',
+  delete: 'slim',
   copy: 'expanded',
   paste: 'expanded',
   'panel:properties': 'expanded',

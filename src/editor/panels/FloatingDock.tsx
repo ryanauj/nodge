@@ -53,9 +53,12 @@ export interface FloatingDockProps {
   /** An add-node mutation is in flight — disables Add so rapid taps can't place
    *  two nodes at the same (stale-count) position. */
   addBusy?: boolean
-  /** Something is selected — enables copy. */
+  /** A node is selected — enables copy. */
   hasSelection: boolean
+  /** A node or edge is selected — enables delete. */
+  canDelete: boolean
   onAddNode: () => void
+  onDelete: () => void
   onUndo: () => void
   onRedo: () => void
   onCopy: () => void
@@ -238,6 +241,8 @@ export function FloatingDock(props: FloatingDockProps) {
         return { onClick: props.onRedo, disabled: !props.canRedo }
       case 'add':
         return { onClick: props.onAddNode, disabled: !props.canAct || !!props.addBusy }
+      case 'delete':
+        return { onClick: props.onDelete, disabled: !props.canDelete }
       case 'copy':
         return { onClick: props.onCopy, disabled: !props.hasSelection }
       case 'paste':

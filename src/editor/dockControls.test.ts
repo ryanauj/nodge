@@ -22,6 +22,7 @@ describe('dockControls registry', () => {
         'undo',
         'redo',
         'add',
+        'delete',
         'copy',
         'paste',
         'panel:properties',
@@ -43,6 +44,7 @@ describe('dockControls registry', () => {
     expect(defaultPlacement('undo')).toBe('slim')
     expect(defaultPlacement('redo')).toBe('slim')
     expect(defaultPlacement('add')).toBe('slim')
+    expect(defaultPlacement('delete')).toBe('slim')
     expect(defaultPlacement('copy')).toBe('expanded')
     expect(defaultPlacement('panel:palette')).toBe('expanded')
     expect(defaultPlacement('save')).toBe('expanded')

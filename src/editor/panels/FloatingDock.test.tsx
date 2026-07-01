@@ -20,7 +20,9 @@ function renderDock(overrides: Partial<FloatingDockProps> = {}) {
     canRedo: true,
     canAct: true,
     hasSelection: true,
+    canDelete: true,
     onAddNode: vi.fn(),
+    onDelete: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onCopy: vi.fn(),
@@ -59,6 +61,19 @@ describe('FloatingDock', () => {
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Add node' }))
     expect(props.onAddNode).toHaveBeenCalledTimes(1)
+  })
+
+  it('Delete sits in the slim row and fires when a selection exists', () => {
+    const props = renderDock()
+    const del = screen.getByRole('button', { name: 'Delete selection' })
+    expect(del).toBeEnabled()
+    fireEvent.click(del)
+    expect(props.onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('Delete is disabled when nothing is selected', () => {
+    renderDock({ canDelete: false })
+    expect(screen.getByRole('button', { name: 'Delete selection' })).toBeDisabled()
   })
 
   it('the expand toggle reveals the expanded controls', () => {

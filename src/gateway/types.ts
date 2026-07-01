@@ -208,6 +208,14 @@ export interface NodePositionInput {
   y: number
 }
 
+/** Which placements to delete from a diagram in one command (spec §7.1). */
+export interface DeleteElementsInput {
+  /** Node placements to remove (their incident edges + positions go too). */
+  nodeIds: Uuid[]
+  /** Edge placements to remove explicitly (in addition to incident ones). */
+  edgeIds: Uuid[]
+}
+
 /** Options for {@link DataGateway.generateLayout} — currently the Dagre direction. */
 export interface GenerateLayoutOptions {
   /** Rank direction passed to Dagre. Defaults to `'TB'`. */
@@ -474,6 +482,13 @@ export interface DataGateway {
   /** Patch an edge placement's label / pinned style (§8.3), one command. */
   updateEdge(id: Uuid, patch: EdgePatch): Promise<Edge>
   deleteEdge(id: Uuid): Promise<void>
+  /**
+   * Delete a set of node + edge placements from a diagram as ONE undoable command.
+   * Deleting a node also removes every edge incident to it and its per-layout
+   * positions; base entities/relationships are untouched (spec §7.1). A no-op
+   * (nothing to remove) executes no command, so it never leaves an empty undo step.
+   */
+  deleteDiagramElements(diagramId: Uuid, input: DeleteElementsInput): Promise<void>
   createLayout(diagramId: Uuid, input: LayoutInput): Promise<Layout>
   updateLayout(id: Uuid, patch: LayoutPatch): Promise<Layout>
   /** Delete a layout and its per-layout positions, one command. */
