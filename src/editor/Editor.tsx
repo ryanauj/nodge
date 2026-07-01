@@ -708,6 +708,29 @@ function EditorCanvas() {
     },
   })
 
+  // Delete the current selection (nodes + edges) as one undoable command (§7.1).
+  // Deleting a node also removes its incident edges (handled in the gateway), so
+  // the canvas never keeps a dangling edge. Clears selection so the panels close.
+  const deleteSelection = useMutation({
+    mutationFn: async () => {
+      if (!ids) return
+      const nodeIds = selectedNodeIdsRef.current.slice()
+      const edgeIds = selectedEdgeIdsRef.current.slice()
+      if (nodeIds.length === 0 && edgeIds.length === 0) return
+      const gw = await getGateway()
+      await gw.deleteDiagramElements(ids.diagramId, { nodeIds, edgeIds })
+    },
+    onSuccess: async () => {
+      selectedNodeIdsRef.current = []
+      selectedEdgeIdsRef.current = []
+      setSelectedNodeId(null)
+      setSelectedEntityId(null)
+      setSelectedEdgeId(null)
+      await invalidateDiagram()
+      await refreshUndo()
+    },
+  })
+
   // Track selection so the panels and copy/paste know what's active.
   const onSelectionChange = useCallback(
     ({ nodes: selNodes, edges: selEdges }: { nodes: FlowNode[]; edges: FlowEdge[] }) => {
@@ -764,9 +787,31 @@ function EditorCanvas() {
     },
   })
 
-  // Keyboard shortcuts (desktop): Ctrl/Cmd+Z undo, +Shift / Ctrl+Y redo, C copy, V paste.
+  // Keyboard shortcuts (desktop): Ctrl/Cmd+Z undo, +Shift / Ctrl+Y redo, C copy,
+  // V paste; Delete/Backspace deletes the selection. We own delete (React Flow's
+  // built-in `deleteKeyCode` is disabled) so it routes through the gateway rather
+  // than only mutating local canvas state.
   useEffect(() => {
+    const isEditable = (el: EventTarget | null): boolean => {
+      const node = el as HTMLElement | null
+      if (!node) return false
+      const tag = node.tagName
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        node.isContentEditable === true
+      )
+    }
     const onKey = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditable(e.target)) {
+        if (selectedNodeIdsRef.current.length === 0 && selectedEdgeIdsRef.current.length === 0) {
+          return
+        }
+        e.preventDefault()
+        deleteSelection.mutate()
+        return
+      }
       if (!(e.ctrlKey || e.metaKey)) return
       const key = e.key.toLowerCase()
       if (key === 'z' && !e.shiftKey) {
@@ -783,7 +828,7 @@ function EditorCanvas() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, copySelection, pasteClipboard])
+  }, [undo, redo, copySelection, pasteClipboard, deleteSelection])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -1001,6 +1046,9 @@ function EditorCanvas() {
           zoomOnPinch
           zoomOnDoubleClick={false}
           panOnScroll={false}
+          // We own delete (keyboard handler → gateway) so React Flow can't strip a
+          // node from local state without persisting it. `null` disables its key.
+          deleteKeyCode={null}
           // Large-graph performance (§12 Phase 5): only mount nodes/edges inside the
           // viewport so a big board stays interactive; DB work stays in the worker.
           onlyRenderVisibleElements
@@ -1070,10 +1118,10 @@ function EditorCanvas() {
       )}
 
       {/* Draggable floating dock — the single control surface on every viewport.
-          A slim row (undo/redo/add by default) plus an expandable, customisable
-          panel for copy/paste, the panel openers, the display toggles, and
-          Save/Load. Display state is client UI state; the editing/file actions
-          call back into the gateway-backed mutations above. */}
+          A slim row (undo/redo/add/delete by default) plus an expandable,
+          customisable panel for copy/paste, the panel openers, the display
+          toggles, and Save/Load. Display state is client UI state; the
+          editing/file actions call back into the gateway-backed mutations above. */}
       {ids && (
         <FloatingDock
           availableSheets={[...availableSheets]}
@@ -1082,7 +1130,9 @@ function EditorCanvas() {
           canAct={ready}
           addBusy={!!addPickerCtx || placeExisting.isPending || addNamedNode.isPending}
           hasSelection={!!selectedNodeId}
+          canDelete={!!selectedNodeId || !!selectedEdgeId}
           onAddNode={onAddNodeButton}
+          onDelete={() => deleteSelection.mutate()}
           onUndo={() => undo.mutate()}
           onRedo={() => redo.mutate()}
           onCopy={() => void copySelection()}

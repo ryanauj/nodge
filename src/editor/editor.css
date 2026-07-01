@@ -880,3 +880,18 @@
   width: 18px;
   height: 18px;
 }
+
+/* ── Selection affordance: a selected node/edge is visibly marked so the current
+   selection is always legible (drives what Delete/Copy act on). Nodes use an
+   `outline` (a separate property from the inline elevation box-shadow, so it
+   never fights it); edges override their inline stroke with the focus colour. ── */
+.react-flow__node.selected .nodge-node {
+  outline: 2px solid var(--nodge-border-focus, #4361ee);
+  outline-offset: 3px;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  /* `!important` beats the per-edge inline stroke snapshot (§8.3). */
+  stroke: var(--nodge-border-focus, #4361ee) !important;
+  stroke-width: 3 !important;
+}

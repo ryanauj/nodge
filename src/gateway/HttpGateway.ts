@@ -39,6 +39,7 @@ import type {
   CreatePrototypeFromEdgeInput,
   CreatePrototypeFromNodeInput,
   DataGateway,
+  DeleteElementsInput,
   DiagramDetail,
   DiagramInput,
   DiagramPatch,
@@ -179,6 +180,9 @@ export class HttpGateway implements DataGateway {
   }
   deleteEdge(id: Uuid): Promise<void> {
     return this.local.deleteEdge(id)
+  }
+  deleteDiagramElements(diagramId: Uuid, input: DeleteElementsInput): Promise<void> {
+    return this.local.deleteDiagramElements(diagramId, input)
   }
   createLayout(diagramId: Uuid, input: LayoutInput): Promise<Layout> {
     return this.local.createLayout(diagramId, input)

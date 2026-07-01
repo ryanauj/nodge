@@ -425,6 +425,8 @@ Because React Flow decides pan-vs-select at pointer-down (and its pan can't be i
 
 ### 10.3 Core editor features (across phases)
 - Pan/zoom, minimap (toggle), snap-to-grid (optional), multi-select, marquee.
+- **Selection is always legible:** a selected node/edge is visibly marked; the dock's Copy/Delete reflect whether anything is selected.
+- **Delete selection** — a dock action (and Delete/Backspace on desktop) removes the selected node/edge placements in one undoable command; deleting a node drops its incident edges but never the base entity/relationship (§7.1).
 - **Undo/redo** (from the command layer), keyboard shortcuts on desktop.
 - **Auto-layout** (Dagre-style hierarchical) producing/updating a view's positions.
 - Node/edge property panels with the **link/unlink** (token vs pinned) affordance.

@@ -50,6 +50,7 @@ import type {
   CreatePrototypeFromEdgeInput,
   CreatePrototypeFromNodeInput,
   DataGateway,
+  DeleteElementsInput,
   DiagramDetail,
   DiagramInput,
   DiagramPatch,
@@ -379,6 +380,42 @@ export class LocalGateway implements DataGateway {
 
   async deleteEdge(id: Uuid): Promise<void> {
     await this.commands.execute(command('deleteEdge', (m) => m.remove(edgeTable, { id })))
+  }
+
+  /**
+   * Delete a set of node + edge placements as ONE undoable command (spec §7.1).
+   * Removing a node also removes every edge incident to it (so no dangling edge
+   * is left) and its positions across the diagram's layouts. The base
+   * entities/relationships are never touched — only the visual placements. A
+   * no-op executes nothing, so it never records an empty undo step.
+   */
+  async deleteDiagramElements(diagramId: Uuid, input: DeleteElementsInput): Promise<void> {
+    const nodeIds = new Set(input.nodeIds)
+    const explicitEdgeIds = new Set(input.edgeIds)
+    const allEdges = await this.repo.list(edgeTable, { diagramId })
+    // Edges to remove: those explicitly selected plus any incident to a deleted
+    // node (dedup by id via a map).
+    const edgesToRemove = new Map<Uuid, Uuid>()
+    for (const e of allEdges) {
+      if (explicitEdgeIds.has(e.id) || nodeIds.has(e.sourceNodeId) || nodeIds.has(e.targetNodeId)) {
+        edgesToRemove.set(e.id, e.id)
+      }
+    }
+    // Per-layout positions for the deleted nodes.
+    const layouts = await this.repo.list(layoutTable, { diagramId })
+    const positions: { layoutId: Uuid; nodeId: Uuid }[] = []
+    for (const layout of layouts) {
+      const ps = await this.repo.list(nodePositionTable, { layoutId: layout.id })
+      for (const p of ps) if (nodeIds.has(p.nodeId)) positions.push({ layoutId: layout.id, nodeId: p.nodeId })
+    }
+    if (nodeIds.size === 0 && edgesToRemove.size === 0) return
+    await this.commands.execute(
+      command('deleteDiagramElements', async (m) => {
+        for (const p of positions) await m.remove(nodePositionTable, p)
+        for (const id of edgesToRemove.keys()) await m.remove(edgeTable, { id })
+        for (const id of nodeIds) await m.remove(nodeTable, { id })
+      }),
+    )
   }
 
   async createLayout(diagramId: Uuid, input: LayoutInput): Promise<Layout> {

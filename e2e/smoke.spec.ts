@@ -130,6 +130,65 @@ test('mode-less selection: tap selects one, double-tap adds/removes (⌘-click p
   expect(errors).toEqual([])
 })
 
+test('delete: selected node (and its edge) is removed via the dock, and undo restores it', async ({
+  page,
+}) => {
+  const errors = trackErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Add node' }).first()).toBeEnabled()
+
+  await addNodeViaPicker(page, 'Keep')
+  await addNodeViaPicker(page, 'Gone')
+  await expect(page.locator('.react-flow__node')).toHaveCount(2)
+  await expect(page.getByTestId('editor-busy')).toHaveCount(0)
+
+  // Connect them so we can prove deleting a node also drops its incident edge.
+  const box0 = await page.locator('.react-flow__node').nth(0).boundingBox()
+  const box1 = await page.locator('.react-flow__node').nth(1).boundingBox()
+  if (!box0 || !box1) throw new Error('nodes not found')
+  const leftIndex = box0.x <= box1.x ? 0 : 1
+  const rightIndex = leftIndex === 0 ? 1 : 0
+  const s = await page
+    .locator('.react-flow__node')
+    .nth(leftIndex)
+    .locator('.react-flow__handle.source')
+    .boundingBox()
+  const t = await page
+    .locator('.react-flow__node')
+    .nth(rightIndex)
+    .locator('.react-flow__handle.target')
+    .boundingBox()
+  if (!s || !t) throw new Error('handles not found')
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
+  await page.mouse.down()
+  await page.mouse.move((s.x + t.x) / 2, (s.y + t.y) / 2, { steps: 6 })
+  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+  await expect(page.getByTestId('editor-busy')).toHaveCount(0)
+
+  // Delete is disabled until something is selected.
+  const del = page.getByRole('button', { name: 'Delete selection' })
+  await expect(del).toBeDisabled()
+
+  // Select a node → it shows as selected and Delete enables.
+  await page.locator('.react-flow__node').first().click()
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(1)
+  await expect(del).toBeEnabled()
+
+  // Delete removes the node and its incident edge.
+  await del.click()
+  await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(0)
+
+  // Undo brings both back in one step.
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.locator('.react-flow__node')).toHaveCount(2)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+
+  expect(errors).toEqual([])
+})
+
 test('Phase 2: prototype library stamps a node and selection opens properties', async ({
   page,
 }) => {

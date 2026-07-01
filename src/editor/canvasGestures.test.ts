@@ -83,6 +83,61 @@ describe('connectNodes gesture', () => {
   })
 })
 
+describe('delete gesture', () => {
+  it('deletes selected nodes + their incident edges in one undoable command, sparing base entities', async () => {
+    const gw = await createMemoryGateway(deterministicDeps())
+    const ids = await freshDiagram(gw)
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 200, y: 0 })
+    await gw.connectNodes(ids.diagramId, { sourceNodeId: a.node.id, targetNodeId: b.node.id })
+
+    // Delete node A → its incident edge goes with it; B stays.
+    await gw.deleteDiagramElements(ids.diagramId, { nodeIds: [a.node.id], edgeIds: [] })
+
+    const after = await gw.getDiagram(ids.diagramId)
+    expect(after.nodes.map((n) => n.id)).toEqual([b.node.id])
+    expect(after.edges).toHaveLength(0)
+    // Base entities + relationship are placements-only deletes: they remain (§7.1).
+    expect((await gw.getGraph(ids.graphId)).entities).toHaveLength(2)
+    expect((await gw.getGraph(ids.graphId)).relationships).toHaveLength(1)
+
+    // One gesture = one undo step: node A and the edge come back together.
+    expect(await gw.commands.undo()).toBe(true)
+    const restored = await gw.getDiagram(ids.diagramId)
+    expect(restored.nodes).toHaveLength(2)
+    expect(restored.edges).toHaveLength(1)
+  })
+
+  it('deletes an explicitly-selected edge without touching its nodes', async () => {
+    const gw = await createMemoryGateway(deterministicDeps())
+    const ids = await freshDiagram(gw)
+    const a = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    const b = await gw.addNode(ids.diagramId, ids.layoutId, { name: 'B', x: 200, y: 0 })
+    const { edge } = await gw.connectNodes(ids.diagramId, {
+      sourceNodeId: a.node.id,
+      targetNodeId: b.node.id,
+    })
+
+    await gw.deleteDiagramElements(ids.diagramId, { nodeIds: [], edgeIds: [edge.id] })
+
+    const after = await gw.getDiagram(ids.diagramId)
+    expect(after.nodes).toHaveLength(2)
+    expect(after.edges).toHaveLength(0)
+  })
+
+  it('a no-op delete records no undo step', async () => {
+    const gw = await createMemoryGateway(deterministicDeps())
+    const ids = await freshDiagram(gw)
+    await gw.addNode(ids.diagramId, ids.layoutId, { name: 'A', x: 0, y: 0 })
+    await gw.deleteDiagramElements(ids.diagramId, { nodeIds: [], edgeIds: [] })
+    // The empty delete pushed nothing: the very next undo reverts the addNode
+    // (if it had recorded a step, this undo would pop that empty step instead and
+    // leave the node in place).
+    await gw.commands.undo()
+    expect((await gw.getDiagram(ids.diagramId)).nodes).toHaveLength(0)
+  })
+})
+
 describe('move gesture', () => {
   it('persists per-view positions; one drag end is one undoable command', async () => {
     const gw = await createMemoryGateway(deterministicDeps())
