@@ -1,8 +1,30 @@
 /// <reference types="vitest/config" />
+import { copyFileSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
-import { defineConfig } from 'vite'
+import { dirname, resolve } from 'node:path'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// GitHub Pages is a static file host with no SPA rewrite: refreshing a deep
+// client-side route (e.g. `/nodge/diagram/<id>/layout/<id>`) asks the server for
+// a file that doesn't exist, so Pages returns its own 404 and the app never
+// boots. The standard fix is a `404.html` that is a byte copy of `index.html`:
+// Pages serves it for any unknown path, the app boots, and the router reads the
+// real URL — the diagram/layout data is already in the local OPFS DB. Build only.
+function spaGithubPagesFallback(): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'spa-github-pages-404',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    closeBundle() {
+      const index = resolve(outDir, 'index.html')
+      if (existsSync(index)) copyFileSync(index, resolve(outDir, '404.html'))
+    },
+  }
+}
 
 // Resolve where the SQLite-WASM package actually lives. With pnpm — and
 // especially when running from a git worktree whose `node_modules` is hoisted to
@@ -20,7 +42,7 @@ try {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), spaGithubPagesFallback()],
   // Must match the GitHub Pages path (repo name) so asset URLs resolve.
   base: '/nodge/',
   // The SQLite-WASM package ships its own `.wasm`; pre-bundling it into
